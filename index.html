@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Estoque">
+<meta name="theme-color" content="#22313b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="static/icone-180.png">
+<title>Estoque Autônomo</title>
+<link rel="icon" href="static/icone.svg" type="image/svg+xml">
+<link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<div id="shell">
+  <aside id="side">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="14" width="26" height="15" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 14 16 4l13 10" fill="none" stroke="currentColor" stroke-width="2"/><rect x="9" y="19" width="6" height="5" fill="currentColor"/><rect x="17" y="19" width="6" height="5" fill="currentColor" opacity=".55"/></svg>
+      <div><strong>Estoque Autônomo</strong><small id="house">—</small></div>
+    </div>
+    <nav id="menu"></nav>
+    <div class="side-foot">
+      <span class="offline-dot" title="O sistema não usa internet"></span> Funcionando offline
+      <button id="btn-quit" class="link" title="Faz backup se houver alterações e encerra o sistema">Encerrar sistema</button>
+    </div>
+  </aside>
+  <div id="main">
+    <header id="top">
+      <button id="menu-toggle" class="icon-btn" aria-label="Abrir menu">☰</button>
+      <form id="scan-form" autocomplete="off">
+        <label for="scan" class="sr">Ler código</label>
+        <input id="scan" placeholder="Ler etiqueta (leitor USB) ou buscar produto…  [F2]" autocomplete="off">
+        <button type="button" id="scan-cam" class="btn ghost" title="Ler QR Code pela câmera">Câmera</button>
+      </form>
+      <a href="#/emergencia" class="btn emergency-btn">Modo de emergência</a>
+    </header>
+    <div id="alerts"></div>
+    <main id="view" tabindex="-1"></main>
+  </div>
+</div>
+<div id="modal-root"></div>
+<div id="toasts" aria-live="polite"></div>
+<script src="static/vendor/jsQR.js"></script>
+<script src="static/core.js"></script>
+<script src="static/views_main.js"></script>
+<script src="static/views_ops.js"></script>
+<script src="static/views_plan.js"></script>
+<script src="static/views_admin.js"></script>
+<script src="pyodide/pyodide.js"></script>
+<script src="static/ipad.js"></script>
+<script>EA.bootIpad();</script>
+</body>
+</html>

@@ -133,6 +133,7 @@
 
   // --------------------------------------------------------------- lembrete de cópia para Arquivos
   function exportReminder() {
+    if (window.EA_DEMO) return;
     const last = EA.boot.settings.ipad_last_export;
     const days = last ? (Date.now() - new Date(last.replace(" ", "T")).getTime()) / 864e5 : Infinity;
     if (days < 7) return;
@@ -148,16 +149,28 @@
     document.body.classList.add("ipad");
     splash("Carregando…", "Na primeira abertura leva alguns segundos. Depois funciona sem internet.");
     if ("serviceWorker" in navigator) {
-      try { await navigator.serviceWorker.register("sw.js"); } catch (e) { console.warn("SW", e); }
+      if (!window.EA_DEMO) { try { await navigator.serviceWorker.register("sw.js"); } catch (e) { console.warn("SW", e); } }
     }
     try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) { /* */ }
-    py = await loadPyodide({ indexURL: "pyodide/", stdout: () => {}, stderr: (t) => console.warn(t) });
+    const opts = { indexURL: window.EA_PYODIDE_URL || "pyodide/", stdout: () => {}, stderr: (t) => console.warn(t) };
+    if (window.EA_STDLIB_URL) opts.stdLibURL = window.EA_STDLIB_URL; // hospedagens que não servem .zip
+    if (window.EA_LOCK_URL) opts.lockFileURL = window.EA_LOCK_URL;
+    py = await loadPyodide(opts);
+    if (window.EA_STDLIB_URL) {
+      // pacotes servidos com extensão .zip.wasm (hospedagens que recusam .zip)
+      py.runPython("import shutil\nshutil.register_unpack_format('zipwasm', ['.zip.wasm'], shutil._unpack_zipfile)");
+    }
     await py.loadPackage("sqlite3", { messageCallback: () => {} });
     FS = py.FS;
     try { FS.mkdir("/data"); } catch (e) { /* já existe */ }
     FS.mount(py.FS.filesystems.IDBFS, {}, "/data");
     await syncfs(true);
-    const appZip = await (await fetch("app.zip")).arrayBuffer();
+    // banco inicial opcional (usado na página de demonstração)
+    if (window.EA_SEED_DB && !py.FS.analyzePath("/data/estoque.db").exists) {
+      const seed = new Uint8Array(await (await fetch(window.EA_SEED_DB)).arrayBuffer());
+      py.FS.writeFile("/data/estoque.db", seed);
+    }
+    const appZip = await (await fetch(window.EA_APP_ZIP || "app.zip")).arrayBuffer();
     py.unpackArchive(appZip, "zip", { extractDir: "/app" });
     const main = await (await fetch("ipad_main.py")).text();
     py.runPython(main);

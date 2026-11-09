@@ -1,31 +1,31 @@
 /* Service worker: guarda todos os arquivos do app no iPad para funcionar sem internet. */
-const CACHE = "estoque-autonomo-1bc3914d38a2";
+const CACHE = "estoque-autonomo-f594ed6dfd66";
 const FILES = [
  "./",
  "app.zip",
  "index.html",
  "ipad_main.py",
  "manifest.webmanifest",
- "pyodide/pyodide-lock.json",
- "pyodide/pyodide.asm.js",
- "pyodide/pyodide.asm.wasm",
- "pyodide/pyodide.js",
- "pyodide/python_stdlib.zip",
- "pyodide/sqlite3-1.0.0.zip",
- "static/core.js",
- "static/icone-180.png",
- "static/icone-192.png",
- "static/icone-512.png",
- "static/icone.ico",
- "static/icone.svg",
- "static/ipad.js",
- "static/style.css",
- "static/vendor/jsQR-LICENSE.txt",
- "static/vendor/jsQR.js",
- "static/views_admin.js",
- "static/views_main.js",
- "static/views_ops.js",
- "static/views_plan.js"
+ "pyodide-lock.json",
+ "pyodide.asm.js",
+ "pyodide.asm.wasm",
+ "pyodide.js",
+ "python_stdlib.zip",
+ "sqlite3-1.0.0.zip",
+ "core.js",
+ "icone-180.png",
+ "icone-192.png",
+ "icone-512.png",
+ "icone.ico",
+ "icone.svg",
+ "ipad.js",
+ "style.css",
+ "jsQR-LICENSE.txt",
+ "jsQR.js",
+ "views_admin.js",
+ "views_main.js",
+ "views_ops.js",
+ "views_plan.js"
 ];
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));

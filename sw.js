@@ -1,5 +1,5 @@
 /* Service worker: guarda todos os arquivos do app no iPad para funcionar sem internet. */
-const CACHE = "estoque-autonomo-f594ed6dfd66";
+const CACHE = "estoque-autonomo-32f6fd26d179";
 const FILES = [
  "./",
  "app.zip",

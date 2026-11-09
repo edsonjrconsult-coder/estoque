@@ -132,9 +132,7 @@
       onOk: async (m) => {
         const c = m.querySelector("[name=confirm]").value.trim().toUpperCase();
         const r = await EA.post(payload.url, Object.assign({ confirm: c }, payload.body));
-        await EA.reloadBoot();
-        EA.toast("Restaurado. Backup do estado anterior: " + r.pre_restore_backup.split(/[\\/]/).pop());
-        EA.go("#/dashboard");
+        EA.afterRestore("Restaurado. Backup do estado anterior: " + r.pre_restore_backup.split(/[\\/]/).pop());
       },
     });
     el.querySelectorAll("[data-rest]").forEach((b) => (b.onclick = () => restore({ url: "/api/backups/restore", body: { name: b.dataset.rest } }, b.dataset.rest)));
@@ -157,9 +155,7 @@
         if (!file) throw new Error("Selecione o arquivo.");
         const b64 = await fileB64(file);
         const r = await EA.post("/api/restore-upload", { data: b64, filename: file.name, confirm: m.querySelector("[name=confirm]").value.trim().toUpperCase() });
-        await EA.reloadBoot();
-        EA.toast("Restaurado. Backup do estado anterior: " + r.pre_restore_backup.split(/[\\/]/).pop());
-        EA.go("#/dashboard");
+        EA.afterRestore("Restaurado. Backup do estado anterior: " + r.pre_restore_backup.split(/[\\/]/).pop());
       },
     });
     el.querySelector("[data-impjson]").onclick = () => EA.modal({
@@ -173,12 +169,52 @@
         let data;
         try { data = JSON.parse(await file.text()); } catch (e) { throw new Error("Arquivo JSON inválido."); }
         await EA.post("/api/import-json", { data, confirm: m.querySelector("[name=confirm]").value.trim().toUpperCase() });
-        await EA.reloadBoot();
-        EA.toast("Dados importados.");
-        EA.go("#/dashboard");
+        EA.afterRestore("Dados importados.");
       },
     });
   };
+  async function usersPanel(el) {
+    const ROLE = { admin: "Administrador", operador: "Operador", consulta: "Consulta" };
+    const roleOpts = (sel) => Object.entries(ROLE).map(([k, v]) => `<option value="${k}" ${k === sel ? "selected" : ""}>${v}</option>`).join("");
+    const users = await EA.get("/api/users");
+    el.querySelector("[data-ulist]").innerHTML = `<div class="table-wrap"><table class="t"><thead><tr><th>Nome</th><th>Usuário</th><th>Perfil</th><th>Situação</th><th>Último acesso</th><th></th></tr></thead><tbody>
+      ${users.map((u) => `<tr><td><b>${esc(u.name)}</b>${u.id === EA.user.id ? ' <span class="badge b-blue">você</span>' : ""}</td><td class="mono">${esc(u.username)}</td><td>${esc(u.role_label)}</td>
+        <td>${u.active ? '<span class="badge b-green">ativo</span>' : '<span class="badge b-grey">desativado</span>'}</td><td>${EA.date(u.last_login)}</td>
+        <td class="right"><button class="btn sm ghost" data-eu="${u.id}">Editar</button></td></tr>`).join("")}</tbody></table></div>`;
+    el.querySelector("[data-newuser]").onclick = () => EA.modal({
+      title: "Novo usuário", size: "narrow", okLabel: "Criar usuário",
+      body: `<form class="form"><label class="fld s12"><span>Nome</span><input name="name"></label><label class="fld s6"><span>Usuário</span><input name="username" autocapitalize="none" autocomplete="off"></label>
+        <label class="fld s6"><span>Perfil</span><select name="role">${roleOpts("operador")}</select></label>
+        <label class="fld s12"><span>Senha inicial (mín. 6)</span><input name="password" type="password" autocomplete="new-password"></label>
+        <p class="help">A pessoa pode trocar a senha depois, pelo botão “Senha” no topo.</p></form>`,
+      onOk: async (m) => { await EA.post("/api/users", EA.formData(m.querySelector("form"))); EA.toast("Usuário criado."); usersPanel(el); },
+    });
+    el.querySelectorAll("[data-eu]").forEach((b) => (b.onclick = () => {
+      const u = users.find((x) => x.id == b.dataset.eu);
+      EA.modal({
+        title: "Editar usuário " + u.username, size: "narrow",
+        body: `<form class="form"><label class="fld s12"><span>Nome</span><input name="name" value="${esc(u.name)}"></label>
+          <label class="fld s6"><span>Perfil</span><select name="role">${roleOpts(u.role)}</select></label>
+          <label class="fld s6 chk"><input type="checkbox" name="active" ${u.active ? "checked" : ""}><span>Ativo (pode entrar)</span></label>
+          <label class="fld s12"><span>Nova senha (deixe em branco para manter)</span><input name="password" type="password" autocomplete="new-password"></label>
+          <p class="help">Usuários não são apagados, apenas desativados, para preservar o histórico.</p></form>`,
+        onOk: async (m) => {
+          const d = EA.formData(m.querySelector("form"));
+          if (!d.password) delete d.password;
+          await EA.put("/api/users/" + u.id, d);
+          EA.toast("Usuário atualizado.");
+          usersPanel(el);
+        },
+      });
+    }));
+    el.querySelector("[data-newcode]").onclick = async () => {
+      if (!(await EA.confirm("Novo código de recuperação", "O código atual deixará de valer. Anote o novo em lugar seguro.", "Gerar"))) return;
+      const r = await EA.post("/api/users/recovery-code");
+      EA.modal({ title: "Novo código de recuperação", size: "narrow", footer: '<button class="btn" data-x>Já anotei</button>',
+        body: `<p>Anote e guarde em papel. Ele permite redefinir a senha de um administrador.</p><div class="auth-code">${esc(r.recovery_code)}</div>` });
+    };
+  }
+
   function fileB64(file) {
     return new Promise((res, rej) => {
       const r = new FileReader();
@@ -210,7 +246,10 @@
         <label class="fld s3"><span>Revisão periódica a cada (dias)</span><input name="review_interval_days" inputmode="numeric" value="${esc(s.review_interval_days)}"></label>
         <label class="fld s3"><span>Backup automático a cada (horas)</span><input name="auto_backup_hours" inputmode="numeric" value="${esc(s.auto_backup_hours)}"></label>
         <label class="fld s3"><span>Manter backups automáticos</span><input name="auto_backup_keep" inputmode="numeric" value="${esc(s.auto_backup_keep)}"></label>
-      </form><button class="btn" data-save style="margin-top:12px">Salvar configurações</button></section>
+        <label class="fld s3"><span>Sair sozinho após inatividade (min; 0 = nunca)</span><input name="session_timeout_min" inputmode="numeric" value="${esc(s.session_timeout_min)}"></label>
+      </form>${EA.user.role === "admin" ? '<button class="btn" data-save style="margin-top:12px">Salvar configurações</button>' : '<p class="small muted" style="margin-top:10px">Somente um administrador altera as configurações.</p>'}</section>
+      ${EA.user.role === "admin" ? `<section class="panel" data-users><div class="panel-head"><h2>Usuários</h2><div class="actions"><button class="btn sm ghost" data-newcode>Gerar novo código de recuperação</button><button class="btn sm" data-newuser>Novo usuário</button></div></div><div data-ulist></div>
+        <p class="small muted">Perfis: <b>Administrador</b> faz tudo (usuários, configurações, restaurar backup). <b>Operador</b> cadastra e registra movimentações. <b>Consulta</b> só visualiza e imprime. Cada movimentação fica registrada com o nome de quem estava conectado.</p></section>` : ""}
       <div class="grid g2">
         <section class="panel"><div class="panel-head"><h2>Unidades de medida</h2><div class="actions"><button class="btn sm" data-unit>Nova unidade</button></div></div>
           <table class="t">${EA.boot.units.map((u) => `<tr><td class="mono">${esc(u.code)}</td><td>${esc(u.name)}</td><td class="muted">${esc(u.kind)}</td></tr>`).join("")}</table></section>
@@ -220,7 +259,8 @@
             <div class="fld s3" style="justify-content:flex-end"><button class="btn ghost" type="submit">Adicionar</button></div></form></section>
       </div>
       <section class="panel"><div class="panel-head"><h2>Trilha de auditoria</h2><div class="actions"><a class="btn sm ghost" target="_blank" href="${EA.url("/relatorio", { tipo: "auditoria" })}">Relatório completo</a></div></div><div data-aud></div></section>`;
-    el.querySelector("[data-save]").onclick = async () => {
+    const sv = el.querySelector("[data-save]");
+    if (sv) sv.onclick = async () => {
       try {
         await EA.put("/api/settings", { values: EA.formData(el.querySelector("[data-set]")) });
         await EA.reloadBoot();
@@ -238,6 +278,7 @@
       try { await EA.post("/api/scenarios", EA.formData(e.target)); V.configuracoes(el); } catch (err) { EA.toast(err.message, true); }
     });
     el.querySelectorAll("[data-delsc]").forEach((b) => (b.onclick = async () => { await EA.del("/api/scenarios/" + b.dataset.delsc); V.configuracoes(el); }));
+    if (EA.user.role === "admin") await usersPanel(el);
     const aud = await EA.get("/api/audit?limit=60");
     el.querySelector("[data-aud]").innerHTML = aud.length ? `<div class="table-wrap tall"><table class="t"><thead><tr><th>Data</th><th>Entidade</th><th>Ação</th><th>Responsável</th><th>Alterações</th></tr></thead><tbody>
       ${aud.map((r) => `<tr><td class="nowrap">${EA.date(r.ts)}</td><td>${esc(r.entity)} ${r.entity_id || ""}</td><td>${esc(r.action)}</td><td>${esc(r.responsible || "")}</td><td class="small mono" style="max-width:520px;word-break:break-word">${esc(r.after_json || "")}</td></tr>`).join("")}</tbody></table></div>` : '<div class="empty">Sem registros.</div>';

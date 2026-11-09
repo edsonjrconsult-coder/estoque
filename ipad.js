@@ -37,7 +37,7 @@
     const i = pathWithQuery.indexOf("?");
     const path = decodeURIComponent(i >= 0 ? pathWithQuery.slice(0, i) : pathWithQuery);
     const query = i >= 0 ? pathWithQuery.slice(i + 1) : "";
-    const r = call(method, path, query, body === undefined ? "" : JSON.stringify(body));
+    const r = call(method, path, query, body === undefined ? "" : JSON.stringify(body), EA.session || "");
     const out = r.toJs();
     r.destroy();
     let data = out[2];
@@ -50,7 +50,10 @@
     if (MUTATING.has(method)) await EA.persist();
     let obj = null;
     try { obj = JSON.parse(new TextDecoder().decode(r.data)); } catch (e) { obj = null; }
-    if (r.status >= 400) throw new Error((obj && obj.error) || "Erro " + r.status);
+    if (r.status >= 400) {
+      EA.authFailed(r.status, obj);
+      throw new Error((obj && obj.error) || "Erro " + r.status);
+    }
     return obj;
   };
 
@@ -136,9 +139,10 @@
     if (window.EA_DEMO) return;
     const last = EA.boot.settings.ipad_last_export;
     const days = last ? (Date.now() - new Date(last.replace(" ", "T")).getTime()) / 864e5 : Infinity;
-    if (days < 7) return;
+    if (days < 7 || document.getElementById("export-reminder")) return;
     const box = document.getElementById("alerts");
     const div = document.createElement("div");
+    div.id = "export-reminder";
     div.className = "alert warn";
     div.innerHTML = `<span>${last ? "A última cópia do banco para o app Arquivos foi há " + Math.floor(days) + " dias." : "Você ainda não salvou nenhuma cópia do banco fora do app."} No iPad, os dados ficam guardados no próprio app: <b>se o app for removido da Tela de Início, eles são apagados</b>. Salve uma cópia no app Arquivos (iCloud Drive, pendrive USB ou “No meu iPad”).</span><div class="actions"><a class="btn sm" href="ea:/exportar/banco">Salvar cópia agora</a></div>`;
     box.appendChild(div);
@@ -180,8 +184,8 @@
     window.EA_VERSION = py.runPython("version()");
     const s = document.getElementById("splash");
     if (s) s.remove();
+    EA.onEnter = exportReminder;
     await EA.start();
-    exportReminder();
     // grava ao sair/minimizar (segurança extra)
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") EA.persist(); });
   };

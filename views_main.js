@@ -24,6 +24,7 @@
         <div class="sub">${d.people} pessoa(s) atendida(s) · meta de autonomia ${target} dias</div></div>
         <div class="actions"><a class="btn ghost" href="#/movimentacoes">Registrar movimentação</a><a class="btn" href="#/produtos/novo">Cadastrar produto</a></div></div>
       ${d.review_due ? `<div class="alert warn"><span>Revisão periódica de validades e quantidades ${d.last_review ? "vencida (última em " + EA.date(d.last_review.ts) + ")" : "ainda não realizada"} — a recomendação é revisar a cada ${d.review_interval} dias.</span><div class="actions"><a class="btn sm" href="#/revisao">Fazer revisão</a></div></div>` : ""}
+      ${d.total_products === 0 ? `<div class="alert good"><span><b>Comece por aqui:</b> adicione os produtos da lista de sugestões (água, alimentos, higiene, remédios…) e depois lance as quantidades que você tem.</span><div class="actions"><button class="btn sm" data-cat>Abrir lista de sugestões</button></div></div>` : ""}
       ${!d.last_backup ? `<div class="alert warn"><span>Nenhum backup registrado ainda.</span><div class="actions"><a class="btn sm" href="#/backup">Fazer backup</a></div></div>` : ""}
       <div class="autonomy-hero">
         <div class="big"><div class="small">Autonomia geral estimada</div>
@@ -57,6 +58,8 @@
           <p class="small muted">Último backup: ${d.last_backup ? EA.date(d.last_backup.ts) + " (" + esc(d.last_backup.kind) + ")" : "nenhum"}</p></section>
       </div>`;
     bindRowLinks(el);
+    const cb = el.querySelector("[data-cat]");
+    if (cb) cb.onclick = () => EA.catalogModal(() => EA.go("#/produtos"));
   };
   function listExpiry(rows) {
     if (!rows.length) return '<div class="empty">Nenhum item vencido ou vencendo em 30 dias.</div>';
@@ -80,7 +83,7 @@
     }
     el.innerHTML = `
       <div class="page-head"><div><h1>Produtos</h1><div class="sub">Clique em um produto para ver a ficha completa, lotes, recipientes e histórico.</div></div>
-        <div class="actions"><button class="btn ghost" data-imp>Importar planilha (CSV)</button><a class="btn" href="#/produtos/novo">Cadastrar produto</a></div></div>
+        <div class="actions"><button class="btn ghost" data-cat>Lista de sugestões</button><button class="btn ghost" data-imp>Importar planilha (CSV)</button><a class="btn" href="#/produtos/novo">Cadastrar produto</a></div></div>
       <div class="filters">
         <label class="f">Buscar<input data-f="q" value="${esc(initQ)}" placeholder="nome, código, marca, código de barras" style="min-width:260px"></label>
         <label class="f">Categoria<select data-f="category_id">${EA.catOptions("", { withSubs: true })}</select></label>
@@ -96,7 +99,13 @@
       el.querySelectorAll("[data-f]").forEach((i) => { f[i.dataset.f] = i.type === "checkbox" ? (i.checked ? "1" : "") : i.value; });
       const rows = await EA.get("/api/products" + EA.qs(f));
       const box = el.querySelector("[data-list]");
-      if (!rows.length) { box.innerHTML = '<div class="empty">Nenhum produto encontrado. <a href="#/produtos/novo">Cadastrar produto</a></div>'; return; }
+      if (!rows.length) {
+        box.innerHTML = Object.values(f).some((v) => v) ? '<div class="empty">Nenhum produto encontrado com esses filtros.</div>'
+          : '<div class="empty"><p>Nenhum produto cadastrado ainda.</p><p><button class="btn" data-cat2>Começar pela lista de sugestões</button> &nbsp; <a class="btn ghost" href="#/produtos/novo">Cadastrar um produto</a></p></div>';
+        const b2 = box.querySelector("[data-cat2]");
+        if (b2) b2.onclick = () => EA.catalogModal(load);
+        return;
+      }
       box.innerHTML = `<table class="t"><thead><tr><th>Produto</th><th>Categoria</th><th class="n">Quantidade</th><th class="n">Mínimo</th><th>Situação</th><th>Próx. validade</th><th class="n">Autonomia</th><th>Local</th></tr></thead><tbody>
         ${rows.map((p) => `<tr class="click st-${p.status}" data-href="#/produto/${p.id}">
           <td><b>${esc(p.name)}</b>${p.active ? "" : ' <span class="badge b-grey">inativo</span>'}<div class="small muted">${esc(p.code)}${p.brand ? " · " + esc(p.brand) : ""}</div></td>
@@ -111,7 +120,45 @@
     let tmr;
     el.querySelectorAll("[data-f]").forEach((i) => i.addEventListener(i.tagName === "INPUT" && i.type !== "checkbox" ? "input" : "change", () => { clearTimeout(tmr); tmr = setTimeout(load, 200); }));
     el.querySelector("[data-imp]").addEventListener("click", importCsv);
+    el.querySelector("[data-cat]").addEventListener("click", () => EA.catalogModal(load));
     await load();
+  };
+
+  // Lista de produtos sugeridos: cria os produtos com estoque zerado
+  EA.catalogModal = async function (done) {
+    const items = await EA.get("/api/catalog");
+    const groups = {};
+    items.forEach((i) => (groups[i.category] = groups[i.category] || []).push(i));
+    EA.modal({
+      title: "Lista de produtos sugeridos", size: "wide", okLabel: "Adicionar selecionados",
+      body: `<p>Marque o que você guarda em casa. Os produtos entram <b>com estoque zerado</b>; depois, em cada um, use <b>Entrada</b> para lançar a quantidade, a validade e o local.
+        O consumo sugerido é uma média por adulto: ajuste na ficha do produto conforme a realidade da casa.</p>
+        <div style="display:flex;gap:8px;margin:8px 0 12px"><button type="button" class="btn sm ghost" data-all>Marcar todos</button><button type="button" class="btn sm ghost" data-none>Desmarcar todos</button><span class="small muted" data-n style="align-self:center"></span></div>
+        <div style="columns:2 360px;column-gap:22px">${Object.entries(groups).map(([g, list]) => `<div style="break-inside:avoid;margin-bottom:14px">
+          <h3 style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-g="${esc(g)}"> ${esc(g)}</h3>
+          ${list.map((i) => `<label style="display:flex;gap:8px;padding:4px 0;align-items:flex-start;${i.exists ? "opacity:.55" : ""}"><input type="checkbox" value="${esc(i.key)}" data-grp="${esc(g)}" ${i.exists ? "disabled" : "checked"} style="margin-top:3px">
+            <span>${esc(i.name)} <span class="small muted">(${esc(i.unit)})</span>${i.critical ? ' <span class="badge b-blue">crítico</span>' : ""}<br><span class="small muted">${i.exists ? "já cadastrado" : esc(i.consumo)}</span></span></label>`).join("")}</div>`).join("")}</div>`,
+      onOpen: (m) => {
+        const boxes = () => Array.from(m.querySelectorAll("input[value]:not([disabled])"));
+        const count = () => (m.querySelector("[data-n]").textContent = boxes().filter((b) => b.checked).length + " selecionado(s)");
+        m.addEventListener("change", (e) => {
+          if (e.target.dataset.g !== undefined) boxes().filter((b) => b.dataset.grp === e.target.dataset.g).forEach((b) => (b.checked = e.target.checked));
+          count();
+        });
+        m.querySelectorAll("[data-g]").forEach((g) => (g.checked = true));
+        m.querySelector("[data-all]").onclick = () => { boxes().forEach((b) => (b.checked = true)); count(); };
+        m.querySelector("[data-none]").onclick = () => { boxes().forEach((b) => (b.checked = false)); count(); };
+        count();
+      },
+      onOk: async (m) => {
+        const keys = Array.from(m.querySelectorAll("input[value]:checked:not([disabled])")).map((b) => b.value);
+        if (!keys.length) throw new Error("Marque ao menos um produto.");
+        const r = await EA.post("/api/catalog", { keys });
+        await EA.reloadBoot();
+        EA.toast(r.created + " produto(s) adicionado(s) com estoque zerado.");
+        done && done();
+      },
+    });
   };
 
   function importCsv() {
@@ -124,7 +171,7 @@
         if (!f) throw new Error("Selecione o arquivo.");
         const buf = await f.arrayBuffer();
         let text = new TextDecoder("utf-8").decode(buf);
-        if (text.includes("�")) text = new TextDecoder("windows-1252").decode(buf);
+        if (text.includes("\uFFFD")) text = new TextDecoder("windows-1252").decode(buf);
         const resp = m.querySelector("[name=responsible]").value;
         EA.rememberResponsible(resp);
         const r = await EA.post("/api/import-products-csv", { text, responsible: resp });

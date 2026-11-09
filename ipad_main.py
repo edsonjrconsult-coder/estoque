@@ -12,10 +12,10 @@ _dispatch = make_dispatch(app)
 app.auto_backup_once(startup=True)
 
 
-def call(method, path, query, body_json):
+def call(method, path, query, body_json, session=None):
     qs = parse_qs(query or "", keep_blank_values=True)
     body = json.loads(body_json) if body_json else {}
-    code, ctype, data, fname = _dispatch(method, path, qs, body)
+    code, ctype, data, fname = _dispatch(method, path, qs, body, session or None)
     return [code, ctype, data, fname or ""]
 
 

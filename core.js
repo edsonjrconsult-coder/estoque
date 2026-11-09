@@ -5,7 +5,7 @@
 
   // ------------------------------------------------------------ API local
   EA.api = async function (method, path, body) {
-    const opt = { method, headers: { "X-EA-Token": window.EA_TOKEN } };
+    const opt = { method, headers: { "X-EA-Token": window.EA_TOKEN, "X-EA-Session": EA.session || "" } };
     if (body !== undefined) {
       opt.headers["Content-Type"] = "application/json";
       opt.body = JSON.stringify(body);
@@ -18,8 +18,24 @@
     }
     let data = null;
     try { data = await r.json(); } catch (e) { data = null; }
-    if (!r.ok) throw new Error((data && data.error) || "Erro " + r.status);
+    if (!r.ok) {
+      EA.authFailed(r.status, data);
+      throw new Error((data && data.error) || "Erro " + r.status);
+    }
     return data;
+  };
+  // a sessão vale só para esta janela/aba (some ao fechar); recarregar a página não exige novo login
+  EA.user = null;
+  Object.defineProperty(EA, "session", {
+    get() { try { return sessionStorage.getItem("ea_session"); } catch (e) { return EA._sess || null; } },
+    set(v) { EA._sess = v; try { if (v) sessionStorage.setItem("ea_session", v); else sessionStorage.removeItem("ea_session"); } catch (e) { /* */ } },
+  });
+  // sessão expirada ou ausente: volta para a tela de entrada sem perder a tela em que estava
+  EA.authFailed = function (status, data) {
+    if (status === 401 && data && data.auth && EA.user) {
+      EA.user = null; EA.session = null;
+      setTimeout(() => EA.showLogin(true), 0);
+    }
   };
   EA.get = (p) => EA.api("GET", p);
   EA.post = (p, b) => EA.api("POST", p, b || {});
@@ -28,6 +44,7 @@
   EA.url = function (path, params) {
     const u = new URLSearchParams(params || {});
     u.set("t", window.EA_TOKEN);
+    if (EA.session) u.set("s", EA.session);
     return path + "?" + u.toString();
   };
   // Abertura de arquivos gerados (relatórios, etiquetas, exportações). O app do iPad substitui estas funções.
@@ -134,11 +151,7 @@
   };
   EA.locPath = (id) => { const l = EA.boot.locations.find((x) => x.id == id); return l ? l.path : ""; };
 
-  EA.responsible = function () {
-    let v = "";
-    try { v = localStorage.getItem("ea_resp") || ""; } catch (e) { v = ""; }
-    return v || (EA.boot && EA.boot.settings.responsible_default) || "";
-  };
+  EA.responsible = function () { return EA.user ? EA.user.name : ""; };
   EA.rememberResponsible = function (v) { try { if (v) localStorage.setItem("ea_resp", v); } catch (e) { /* sem armazenamento */ } };
 
   // ------------------------------------------------------------ toasts e modais
@@ -208,7 +221,7 @@
     return o;
   };
   EA.respField = function () {
-    return `<label class="fld s4"><span class="req">Responsável</span><input name="responsible" value="${esc(EA.responsible())}" required></label>`;
+    return `<label class="fld s4"><span>Responsável (usuário conectado)</span><input name="responsible" value="${esc(EA.responsible())}" readonly tabindex="-1"></label>`;
   };
 
   // ------------------------------------------------------------ menu e rotas
@@ -368,24 +381,173 @@
   function sessionStorageGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
   function sessionStorageSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* ignore */ } }
 
-  // ------------------------------------------------------------ início
-  EA.start = async function () {
+  // ------------------------------------------------------------ entrada (usuário e senha)
+  function authShell(inner) {
+    const chip = document.getElementById("user-chip");
+    if (chip) chip.remove();
+    let a = document.getElementById("auth");
+    if (!a) { a = document.createElement("div"); a.id = "auth"; document.body.appendChild(a); }
+    a.innerHTML = `<div class="auth-card"><div class="auth-brand"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="15" width="22" height="12" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15 16 6l11 9" fill="none" stroke="currentColor" stroke-width="2"/></svg><div><b>Estoque Autônomo</b><small>${esc((EA.authStatus && EA.authStatus.household) || "")}</small></div></div>${inner}</div>`;
+    const f = a.querySelector("input:not([readonly])");
+    if (f) setTimeout(() => f.focus(), 30);
+    return a;
+  }
+  function authErr(a, msg) { const e = a.querySelector(".auth-err"); e.textContent = msg || ""; e.hidden = !msg; }
+  async function authPost(path, body) {
+    // as rotas de entrada não exigem sessão
+    const prev = EA.session;
+    try { return await EA.post(path, body); } finally { if (!EA.session) EA.session = prev; }
+  }
+
+  EA.showSetup = function () {
+    const a = authShell(`<h1>Criar o administrador</h1><p>Primeiro acesso: crie o usuário administrador. Depois você poderá cadastrar outras pessoas da casa, com perfis de acesso.</p>
+      <form class="form" data-f>
+        <label class="fld s12"><span>Seu nome</span><input name="name" autocomplete="name" required></label>
+        <label class="fld s12"><span>Usuário (para entrar)</span><input name="username" autocomplete="username" autocapitalize="none" required></label>
+        <label class="fld s6"><span>Senha (mín. 6 caracteres)</span><input name="password" type="password" autocomplete="new-password" required></label>
+        <label class="fld s6"><span>Repita a senha</span><input name="password2" type="password" autocomplete="new-password" required></label>
+        <p class="auth-err" hidden></p><button class="btn" type="submit">Criar e entrar</button></form>`);
+    a.querySelector("[data-f]").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const d = EA.formData(e.target);
+      if (d.password !== d.password2) return authErr(a, "As senhas não são iguais.");
+      try {
+        const r = await authPost("/api/auth/setup", d);
+        EA.session = r.session; EA.user = r.user;
+        EA.showRecoveryCode(r.recovery_code, () => EA.enter());
+      } catch (err) { authErr(a, err.message); }
+    });
+  };
+
+  EA.showRecoveryCode = function (code, then) {
+    const a = authShell(`<h1>Guarde o código de recuperação</h1>
+      <p>Se você esquecer a senha do administrador, este código é a <b>única forma</b> de recuperar o acesso. Anote em papel e guarde junto do inventário de emergência.</p>
+      <div class="auth-code">${esc(code)}</div>
+      <p class="small muted">Ele só aparece agora. Depois de usado, o sistema gera um novo. Um administrador pode gerar outro em Configurações › Usuários.</p>
+      <label class="auth-check"><input type="checkbox" data-ok> Anotei o código em lugar seguro</label>
+      <button class="btn" data-go disabled>Continuar</button>`);
+    const ok = a.querySelector("[data-ok]"), go = a.querySelector("[data-go]");
+    ok.addEventListener("change", () => (go.disabled = !ok.checked));
+    go.addEventListener("click", then);
+  };
+
+  EA.showLogin = function (expired) {
+    const demo = EA.authStatus && EA.authStatus.demo;
+    const a = authShell(`<h1>Entrar</h1>${expired ? '<p class="auth-note">Sua sessão terminou por inatividade. Entre novamente para continuar de onde parou.</p>' : ""}
+      ${demo ? '<p class="auth-note">Demonstração: usuário <b>demo</b>, senha <b>demo123</b>.</p>' : ""}
+      <form class="form" data-f>
+        <label class="fld s12"><span>Usuário</span><input name="username" autocomplete="username" autocapitalize="none" required></label>
+        <label class="fld s12"><span>Senha</span><input name="password" type="password" autocomplete="current-password" required></label>
+        <p class="auth-err" hidden></p><button class="btn" type="submit">Entrar</button></form>
+      <button class="link auth-forgot" data-forgot>Esqueci a senha</button>`);
+    a.querySelector("[data-f]").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const r = await authPost("/api/auth/login", EA.formData(e.target));
+        EA.session = r.session; EA.user = r.user;
+        EA.enter();
+      } catch (err) { authErr(a, err.message); }
+    });
+    a.querySelector("[data-forgot]").addEventListener("click", EA.showRecover);
+  };
+
+  EA.showRecover = function () {
+    const a = authShell(`<h1>Recuperar acesso</h1><p>Use o código de recuperação anotado quando o administrador foi criado. Usuários que não são administradores devem pedir a um administrador que troque a senha.</p>
+      <form class="form" data-f>
+        <label class="fld s12"><span>Código de recuperação</span><input name="code" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX-XXXX" required></label>
+        <label class="fld s12"><span>Usuário do administrador</span><input name="username" autocapitalize="none" required></label>
+        <label class="fld s6"><span>Nova senha</span><input name="password" type="password" autocomplete="new-password" required></label>
+        <label class="fld s6"><span>Repita</span><input name="password2" type="password" autocomplete="new-password" required></label>
+        <p class="auth-err" hidden></p><button class="btn" type="submit">Redefinir senha</button></form>
+      <button class="link auth-forgot" data-back>Voltar</button>`);
+    a.querySelector("[data-back]").addEventListener("click", () => EA.showLogin());
+    a.querySelector("[data-f]").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const d = EA.formData(e.target);
+      if (d.password !== d.password2) return authErr(a, "As senhas não são iguais.");
+      try {
+        const r = await authPost("/api/auth/recover", d);
+        EA.showRecoveryCode(r.recovery_code, () => EA.showLogin());
+      } catch (err) { authErr(a, err.message); }
+    });
+  };
+
+  // depois de restaurar, todos entram de novo com os usuários do banco restaurado
+  EA.afterRestore = async function (msg) {
+    EA.session = null; EA.user = null;
+    EA.toast(msg + " Entre novamente.");
+    history.replaceState(null, "", "#/dashboard");
+    try { EA.authStatus = await EA.get("/api/auth/status"); } catch (e) { /* */ }
+    if (EA.authStatus && !EA.authStatus.has_users) EA.showSetup(); else EA.showLogin();
+  };
+
+  EA.logout = async function () {
+    try { await EA.post("/api/auth/logout"); } catch (e) { /* */ }
+    EA.session = null; EA.user = null;
+    EA.showLogin();
+  };
+
+  function renderUserChip() {
+    let c = document.getElementById("user-chip");
+    if (!c) {
+      c = document.createElement("div");
+      c.id = "user-chip";
+      document.getElementById("top").appendChild(c);
+    }
+    c.innerHTML = `<span title="${esc(EA.user.role_label)}">${esc(EA.user.name)}</span><button class="btn ghost sm" data-pw>Senha</button><button class="btn ghost sm" data-out>Sair</button>`;
+    c.querySelector("[data-out]").onclick = EA.logout;
+    c.querySelector("[data-pw]").onclick = () => EA.modal({
+      title: "Trocar minha senha", size: "narrow", okLabel: "Trocar senha",
+      body: `<form class="form"><label class="fld s12"><span>Senha atual</span><input type="password" name="old" autocomplete="current-password"></label>
+        <label class="fld s6"><span>Nova senha</span><input type="password" name="new" autocomplete="new-password"></label><label class="fld s6"><span>Repita</span><input type="password" name="new2" autocomplete="new-password"></label></form>`,
+      onOk: async (m) => {
+        const d = EA.formData(m.querySelector("form"));
+        if (d.new !== d.new2) throw new Error("As senhas novas não são iguais.");
+        await EA.post("/api/auth/password", d);
+        EA.toast("Senha alterada.");
+      },
+    });
+  }
+
+  let started = false;
+  EA.enter = async function () {
+    const a = document.getElementById("auth");
     try {
       await EA.reloadBoot();
     } catch (e) {
       document.getElementById("view").innerHTML = `<div class="alert bad">${esc(e.message)}</div>`;
+    }
+    if (a) a.remove();
+    document.body.classList.toggle("role-consulta", EA.user.role === "consulta");
+    document.body.classList.toggle("role-admin", EA.user.role === "admin");
+    renderUserChip();
+    if (!started) {
+      started = true;
+      EA.renderAlerts();
+      setupScanner();
+      document.getElementById("menu-toggle").addEventListener("click", () => document.getElementById("side").classList.toggle("open"));
+      document.getElementById("btn-quit").addEventListener("click", async () => {
+        if (!(await EA.confirm("Encerrar o sistema", "O sistema fará um backup (se houver alterações) e será encerrado. Para abrir de novo, use o atalho <b>Estoque Autônomo</b>.", "Encerrar"))) return;
+        try { await EA.post("/api/shutdown"); } catch (e) { /* já encerrando */ }
+        document.body.innerHTML = '<div style="padding:40px;font:16px Segoe UI,Arial">Estoque Autônomo encerrado com segurança. Pode fechar esta janela.</div>';
+        setTimeout(() => window.close(), 800);
+      });
+      window.addEventListener("hashchange", route);
+    }
+    route();
+    if (EA.onEnter) EA.onEnter();
+  };
+
+  // ------------------------------------------------------------ início
+  EA.start = async function () {
+    try {
+      EA.authStatus = await EA.get("/api/auth/status");
+    } catch (e) {
+      document.getElementById("view").innerHTML = `<div class="alert bad">${esc(e.message)}</div>`;
       return;
     }
-    EA.renderAlerts();
-    setupScanner();
-    document.getElementById("menu-toggle").addEventListener("click", () => document.getElementById("side").classList.toggle("open"));
-    document.getElementById("btn-quit").addEventListener("click", async () => {
-      if (!(await EA.confirm("Encerrar o sistema", "O sistema fará um backup (se houver alterações) e será encerrado. Para abrir de novo, use o atalho <b>Estoque Autônomo</b>.", "Encerrar"))) return;
-      try { await EA.post("/api/shutdown"); } catch (e) { /* já encerrando */ }
-      document.body.innerHTML = '<div style="padding:40px;font:16px Segoe UI,Arial">Estoque Autônomo encerrado com segurança. Pode fechar esta janela.</div>';
-      setTimeout(() => window.close(), 800);
-    });
-    window.addEventListener("hashchange", route);
-    route();
+    if (!EA.authStatus.has_users) EA.showSetup();
+    else if (EA.authStatus.user) { EA.user = EA.authStatus.user; EA.enter(); }
+    else { EA.session = null; EA.showLogin(); }
   };
 })();

@@ -9,10 +9,10 @@
 <meta name="apple-mobile-web-app-title" content="Estoque">
 <meta name="theme-color" content="#22313b">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="static/icone-180.png">
+<link rel="apple-touch-icon" href="icone-180.png">
 <title>Estoque Autônomo</title>
-<link rel="icon" href="static/icone.svg" type="image/svg+xml">
-<link rel="stylesheet" href="static/style.css">
+<link rel="icon" href="icone.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div id="shell">
@@ -43,14 +43,15 @@
 </div>
 <div id="modal-root"></div>
 <div id="toasts" aria-live="polite"></div>
-<script src="static/vendor/jsQR.js"></script>
-<script src="static/core.js"></script>
-<script src="static/views_main.js"></script>
-<script src="static/views_ops.js"></script>
-<script src="static/views_plan.js"></script>
-<script src="static/views_admin.js"></script>
-<script src="pyodide/pyodide.js"></script>
-<script src="static/ipad.js"></script>
+<script src="jsQR.js"></script>
+<script src="core.js"></script>
+<script src="views_main.js"></script>
+<script src="views_ops.js"></script>
+<script src="views_plan.js"></script>
+<script src="views_admin.js"></script>
+<script src="pyodide.js"></script>
+<script>window.EA_PYODIDE_URL = "./";</script>
+<script src="ipad.js"></script>
 <script>EA.bootIpad();</script>
 </body>
 </html>

@@ -1,0 +1,122 @@
+RELATÓRIO DE TESTES — Estoque Autônomo 2.0
+Data: 11/11/2026
+
+Ambiente: o mesmo Python 3.12 distribuído no pacote, executado em ambiente de rede isolado SEM internet
+(apenas a interface local 127.0.0.1). A tentativa de acesso à internet falha, confirmando o isolamento.
+
+RESULTADO GERAL: 31 testes automáticos do núcleo, 44 verificações na interface do Windows e 26 no iPad simulado — todos aprovados.
+Verificação adicional: publicação no GitHub Pages (arquivos na raiz), abrindo offline após a primeira visita; 57 produtos da lista automática.
+Telas conferidas sem rolagem horizontal em celular (390 px), tablet (834 px) e computador (1366 px).
+
+NOVIDADES DA 2.0 COBERTAS: lançamento de estoque em lote (tudo ou nada), botões rápidos +/− na lista, menu do usuário,
+página de Ajuda, foco do teclado preso em janelas, edição de produto sem apagar a foto, importação de backup JSON
+resistente a arquivo adulterado, índice para histórico grande.
+
+1) TESTES AUTOMÁTICOS DO NÚCLEO (testes/test_sistema.py)
+  fluxo_completo ... ok
+  lista_de_sugestoes ... ok
+  consumo_observado ... ok
+  emergencia_e_compras ... ok
+  exemplo_do_enunciado ... ok
+  perda_por_vencimento_reduz_autonomia ... ok
+  periodos_semana_mes_intervalo ... ok
+  por_pessoa_e_cenarios ... ok
+  reducao_necessaria_emergencia ... ok
+  regras_nao_lineares ... ok
+  backup_restauracao_e_integridade ... ok
+  exportacao_importacao_json ... ok
+  cadastro_e_edicao_com_auditoria ... ok
+  editar_nao_apaga_foto ... ok
+  lancamento_em_lote ... ok
+  unidades_personalizadas ... ok
+  validacoes ... ok
+  etiquetas_pdf ... ok
+  qr_e_codigo_de_barras_offline ... ok
+  estorno ... ok
+  fefo_e_vencidos_nao_sao_consumidos ... ok
+  historico_nao_pode_ser_apagado ... ok
+  lote_em_recipientes_rastreavel ... ok
+  saldo_negativo_impossivel ... ok
+  todos_os_tipos_de_movimentacao ... ok
+  kill_durante_gravacao_nao_perde_nem_corrompe ... ok
+  sistema_completo_reinicia_apos_queda ... ok
+  todos_os_relatorios_e_formatos ... ok
+  token_e_host ... ok
+  nenhuma_tentativa_de_acesso_externo ... ok
+  faixas_de_alerta ... ok
+Ran 31 tests in 9.612s
+OK
+
+2) INTERFACE NO WINDOWS (testes/e2e_interface.js, navegador real, sem internet)
+  OK     Primeiro acesso pede a criação do administrador
+  OK     Código de recuperação exibido uma vez  — 03A0-6A61-1AC2-D22B
+  OK     Interface carrega sem internet, com o usuário conectado
+  OK     Lista de sugestões cria produtos com estoque zerado
+  OK     Lançar estoque: conta as linhas preenchidas
+  OK     Lançar estoque: várias entradas registradas de uma vez
+  OK     Ação rápida "−" na lista de produtos
+  OK     Calculadora: 400 g para 4 pessoas = 0,1 kg por pessoa  — Por pessoa, por refeição | 0,1 kg | Por pessoa, por dia | 0,1 kg
+  OK     Calculadora: pacotes para 90 dias (18 pessoas) = 405
+  OK     Calculadora salva o consumo no produto
+  OK     Administrador cria usuário com perfil de consulta
+  OK     Configurações salvas (18 pessoas)
+  OK     Senha errada é recusada
+  OK     Perfil de consulta não consegue cadastrar
+  OK     Local criado dentro do Depósito
+  OK     Cadastro de produto + lote + 5 recipientes  — 100 L | quantidade atual | 100 L | utilizável (não vencida)
+  OK     Movimentação registrada no nome do usuário conectado
+  OK     Autonomia calculada (100 L / 54 L/dia ≈ 1,9 dias)
+  OK     Edição de produto (com auditoria)
+  OK     Consumo FEFO atualiza estoque
+  OK     Saída maior que o saldo é recusada
+  OK     Transferência entre locais
+  OK     Estorno preserva histórico e corrige saldo
+  OK     Leitor USB (teclado) abre a ficha do lote
+  OK     Campo de leitura abre a ficha do recipiente
+  OK     Leitura de QR do produto abre a ficha
+  OK     QR Code decodificado localmente (jsQR) abre recipiente
+  OK     Etiquetas em PDF  — 21501 bytes
+  OK     Etiquetas para impressão (HTML, térmica 62×40)
+  OK     Folha A4 com várias etiquetas (cópias)
+  OK     11 relatórios × 4 formatos (HTML, PDF, CSV, Excel)
+  OK     Emergência: simulação de redução altera a autonomia  — 1dias → 3dias
+  OK     Inventário de emergência imprimível (PDF)
+  OK     Revisão periódica registra ajuste de inventário
+  OK     Backup manual criado e verificado
+  OK     Verificação de integridade
+  OK     Após restaurar, pede para entrar de novo
+  OK     Restauração de backup (com cópia de segurança prévia)  — produtos antes=4, depois da restauração=4
+  OK     Backup "antes de restaurar" criado automaticamente
+  OK     API recusa acesso sem chave e sem login
+  OK     Ajuda dentro do sistema
+  OK     Foco do teclado fica preso na janela aberta
+  OK     Todas as telas abrem sem erro
+  OK     Nenhuma requisição à internet e nenhum erro no console
+
+3) iPAD (testes/e2e_ipad.js, Safari/iPad Pro 11 simulado, Python dentro do navegador, modo avião)
+  OK     Primeira abertura (instalação) com o núcleo Python no navegador  — 3.8 s
+  OK     iPad: criação do administrador já cadastra a lista de produtos comuns
+  OK     Ao reabrir o app, pede a senha de novo
+  OK     Service worker ativo (arquivos guardados para uso offline)
+  OK     Modo iPad ativo (classe e campos de 16px contra zoom)
+  OK     Cadastro com lote e 6 recipientes no iPad
+  OK     QR Code da ficha gerado no próprio iPad
+  OK     Consumo FEFO
+  OK     Data/hora das movimentações no fuso local do iPad  — 11/11/2026 14:01 vs 14:01
+  OK     Dados continuam após fechar e reabrir o app
+  OK     Abre SEM internet e sem o site de hospedagem (modo avião)  — 3.0 s
+  OK     Dados disponíveis offline
+  OK     Modo de emergência offline
+  OK     Inventário de emergência em PDF gerado offline
+  OK     Visualização para impressão (HTML) dentro do app
+  OK     Botão "Imprimir ou salvar (PDF)" do visualizador
+  OK     Etiquetas PDF geradas offline
+  OK     Relatório Excel gerado offline
+  OK     Pré-visualização de relatório na tela
+  OK     Exportar banco do iPad (.db) para o app Arquivos
+  OK     Campos de pendrive/pasta (exclusivos do Windows) ocultos no iPad
+  OK     iPad: após restaurar o banco do Windows, entra com os usuários dele
+  OK     Banco do Windows restaurado no iPad (mesmo formato)
+  OK     Restauração persiste após reabrir (offline)
+  OK     Todas as telas abrem offline sem erro
+  OK     Nenhuma requisição externa e nenhum erro

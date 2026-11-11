@@ -199,7 +199,7 @@
     }
     if (opts.onOpen) opts.onOpen(m);
     const first = m.querySelector("[autofocus], input:not([type=hidden]):not([readonly]), select, textarea");
-    if (first) setTimeout(() => first.focus(), 30);
+    if (first) first.focus();
     return m;
   };
   EA.confirm = function (title, html, okLabel, danger) {
@@ -389,7 +389,7 @@
     if (!a) { a = document.createElement("div"); a.id = "auth"; document.body.appendChild(a); }
     a.innerHTML = `<div class="auth-card"><div class="auth-brand"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="15" width="22" height="12" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15 16 6l11 9" fill="none" stroke="currentColor" stroke-width="2"/></svg><div><b>Estoque Autônomo</b><small>${esc((EA.authStatus && EA.authStatus.household) || "")}</small></div></div>${inner}</div>`;
     const f = a.querySelector("input:not([readonly])");
-    if (f) setTimeout(() => f.focus(), 30);
+    if (f) f.focus(); // foco imediato (um foco atrasado poderia "roubar" o que já está sendo digitado)
     return a;
   }
   function authErr(a, msg) { const e = a.querySelector(".auth-err"); e.textContent = msg || ""; e.hidden = !msg; }
@@ -406,6 +406,7 @@
         <label class="fld s12"><span>Usuário (para entrar)</span><input name="username" autocomplete="username" autocapitalize="none" required></label>
         <label class="fld s6"><span>Senha (mín. 6 caracteres)</span><input name="password" type="password" autocomplete="new-password" required></label>
         <label class="fld s6"><span>Repita a senha</span><input name="password2" type="password" autocomplete="new-password" required></label>
+        <label class="auth-check fld s12" style="flex-direction:row"><input type="checkbox" name="catalog" checked> Já cadastrar a lista de produtos comuns (água, arroz, feijão, flocão, charque, enlatados, higiene, limpeza, gás…) com estoque zerado</label>
         <p class="auth-err" hidden></p><button class="btn" type="submit">Criar e entrar</button></form>`);
     a.querySelector("[data-f]").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -414,7 +415,10 @@
       try {
         const r = await authPost("/api/auth/setup", d);
         EA.session = r.session; EA.user = r.user;
-        EA.showRecoveryCode(r.recovery_code, () => EA.enter());
+        EA.showRecoveryCode(r.recovery_code, async () => {
+          if (d.catalog) await EA.addWholeCatalog();
+          EA.enter();
+        });
       } catch (err) { authErr(a, err.message); }
     });
   };
@@ -479,6 +483,15 @@
     history.replaceState(null, "", "#/dashboard");
     try { EA.authStatus = await EA.get("/api/auth/status"); } catch (e) { /* */ }
     if (EA.authStatus && !EA.authStatus.has_users) EA.showSetup(); else EA.showLogin();
+  };
+
+  EA.addWholeCatalog = async function () {
+    try {
+      const items = await EA.get("/api/catalog");
+      const r = await EA.post("/api/catalog", { keys: items.filter((i) => !i.exists).map((i) => i.key) });
+      EA.toast(r.created + " produtos da lista cadastrados com estoque zerado. Lance as quantidades em Entrada.");
+      return r;
+    } catch (e) { EA.toast(e.message, true); return null; }
   };
 
   EA.logout = async function () {

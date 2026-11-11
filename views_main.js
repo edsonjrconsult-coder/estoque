@@ -101,9 +101,14 @@
       const box = el.querySelector("[data-list]");
       if (!rows.length) {
         box.innerHTML = Object.values(f).some((v) => v) ? '<div class="empty">Nenhum produto encontrado com esses filtros.</div>'
-          : '<div class="empty"><p>Nenhum produto cadastrado ainda.</p><p><button class="btn" data-cat2>Começar pela lista de sugestões</button> &nbsp; <a class="btn ghost" href="#/produtos/novo">Cadastrar um produto</a></p></div>';
+          : `<div class="panel" style="margin:12px;border-left:5px solid var(--signal)"><h2>Nenhum produto cadastrado ainda</h2>
+            <p>O jeito mais rápido de começar é adicionar a <b>lista de produtos comuns</b>: água, arroz, feijão, flocão (cuscuz), farinha, macarrão, óleo, charque, sardinha, leite em pó, café, remédios básicos, higiene, limpeza, gás, pilhas e outros, cerca de 60 itens.
+            Eles entram com <b>estoque zerado</b>; depois você lança as quantidades em <b>Entrada</b> na ficha de cada um. O que não usar, é só desativar.</p>
+            <p style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-catall>Adicionar a lista completa</button><button class="btn ghost" data-cat2>Escolher quais adicionar</button><a class="btn ghost" href="#/produtos/novo">Cadastrar um produto</a></p></div>`;
         const b2 = box.querySelector("[data-cat2]");
         if (b2) b2.onclick = () => EA.catalogModal(load);
+        const b3 = box.querySelector("[data-catall]");
+        if (b3) b3.onclick = async () => { b3.disabled = true; await EA.addWholeCatalog(); await EA.reloadBoot(); load(); };
         return;
       }
       box.innerHTML = `<table class="t"><thead><tr><th>Produto</th><th>Categoria</th><th class="n">Quantidade</th><th class="n">Mínimo</th><th>Situação</th><th>Próx. validade</th><th class="n">Autonomia</th><th>Local</th></tr></thead><tbody>
@@ -122,6 +127,81 @@
     el.querySelector("[data-imp]").addEventListener("click", importCsv);
     el.querySelector("[data-cat]").addEventListener("click", () => EA.catalogModal(load));
     await load();
+  };
+
+  // ------------------------------------------------------------ calculadora de porções
+  // Ex.: "um pacote de 400 g de cuscuz dá para 4 pessoas, servido 1 vez por dia"
+  const MASS = { g: 0.001, kg: 1 }, VOL = { mL: 0.001, L: 1 };
+  function pkgUnits(u) {
+    if (u in MASS) return Object.keys(MASS);
+    if (u in VOL) return Object.keys(VOL);
+    return [u];
+  }
+  function toProductUnit(q, from, to) {
+    if (from === to) return q;
+    if (from in MASS && to in MASS) return (q * MASS[from]) / MASS[to];
+    if (from in VOL && to in VOL) return (q * VOL[from]) / VOL[to];
+    return q;
+  }
+  EA.portionCalc = async function (o) {
+    o = o || {};
+    let products = null;
+    if (!o.product && !o.unit) products = (await EA.get("/api/products")).filter((p) => p.active);
+    const people = Number(EA.boot.settings.people) || 1;
+    const unitOf = (p) => (p ? p.unit : o.unit) || "kg";
+    const defUnit = (u) => (u === "kg" ? "g" : u === "L" ? "mL" : u);
+    EA.modal({
+      title: "Calculadora de comida por pessoa" + (o.product ? " — " + o.product.name : o.name ? " — " + o.name : ""), okLabel: o.onApply ? "Usar no cadastro" : "Salvar no produto",
+      body: `<p class="small muted">Informe quanto rende uma embalagem na sua casa. A calculadora transforma isso em consumo por pessoa e projeta para ${people} pessoas.</p>
+        <form class="form" data-pc>
+          ${products ? `<label class="fld s12"><span>Produto</span><select name="pid">${products.map((p) => `<option value="${p.id}">${esc(p.name)} (${esc(p.unit)})</option>`).join("")}</select></label>` : ""}
+          <label class="fld s3"><span>Uma embalagem de</span><input name="pkg" inputmode="decimal" value="${unitOf(o.product) === "kg" || unitOf(o.product) === "L" ? "400" : "1"}"></label>
+          <label class="fld s3"><span>Unidade</span><select name="pkgu"></select></label>
+          <label class="fld s3"><span>Dá para quantas pessoas</span><input name="serves" inputmode="numeric" value="4"></label>
+          <label class="fld s3"><span>Servido quantas vezes</span><input name="times" inputmode="decimal" value="1"></label>
+          <label class="fld s3"><span>Por</span><select name="per"><option value="dia">dia</option><option value="semana">semana</option></select></label>
+          <label class="fld s3"><span>Pessoas na casa</span><input name="people" inputmode="numeric" value="${people}"></label>
+        </form>
+        <div class="panel" data-out style="margin-top:12px;background:#f7f9f9"></div>`,
+      onOpen: (m) => {
+        const f = m.querySelector("[data-pc]");
+        const cur = () => (products ? products.find((p) => p.id == f.pid.value) : o.product);
+        const fillUnits = () => {
+          const u = unitOf(cur());
+          f.pkgu.innerHTML = pkgUnits(u).map((x) => `<option ${x === defUnit(u) ? "selected" : ""}>${esc(x)}</option>`).join("");
+        };
+        const calc = () => {
+          const u = unitOf(cur());
+          const pkg = toProductUnit(EA.parseNum(f.pkg.value), f.pkgu.value, u);
+          const serves = Math.max(1, EA.parseNum(f.serves.value));
+          const times = EA.parseNum(f.times.value) / (f.per.value === "semana" ? 7 : 1);
+          const ppl = Math.max(1, EA.parseNum(f.people.value));
+          const perMeal = pkg / serves, perDay = perMeal * times, house = perDay * ppl;
+          m._res = { perPersonDay: perDay };
+          const n = (h) => (pkg > 0 ? Math.ceil((house * h) / pkg) : 0);
+          m.querySelector("[data-out]").innerHTML = pkg > 0 && times > 0 ? `
+            <dl class="kv"><dt>Por pessoa, por refeição</dt><dd><b>${EA.qty(perMeal, u)}</b></dd>
+            <dt>Por pessoa, por dia</dt><dd><b>${EA.qty(perDay, u)}</b></dd>
+            <dt>Para ${ppl} pessoas</dt><dd><b>${EA.qty(house, u)}</b> por dia · ${EA.qty(house * 7, u)} por semana · ${EA.qty(house * 30.4375, u)} por mês</dd>
+            <dt>Embalagens necessárias</dt><dd>${[30, 90, 180].map((h) => `${h} dias: <b>${n(h)}</b>`).join(" · ")} <span class="muted">(de ${EA.num(EA.parseNum(f.pkg.value))} ${esc(f.pkgu.value)})</span></dd></dl>`
+            : '<span class="muted">Preencha o tamanho da embalagem e quantas vezes é servido.</span>';
+        };
+        if (f.pid) f.pid.addEventListener("change", () => { fillUnits(); calc(); });
+        fillUnits();
+        f.addEventListener("input", calc); f.addEventListener("change", calc);
+        calc();
+      },
+      onOk: async (m) => {
+        if (!m._res || !(m._res.perPersonDay > 0)) throw new Error("Preencha os dados da embalagem.");
+        if (o.onApply) { o.onApply(m._res); return; }
+        const f = m.querySelector("[data-pc]");
+        const pid = o.product ? o.product.id : f.pid.value;
+        const full = (await EA.get("/api/products/" + pid)).product;
+        await EA.put("/api/products/" + pid, Object.assign({}, full, { cons_mode: "por_pessoa", cons_period: "dia", cons_qty: m._res.perPersonDay, cons_people: null }));
+        EA.toast("Consumo salvo: " + EA.num(m._res.perPersonDay, 4) + " " + full.unit + " por pessoa por dia.");
+        o.onSaved && o.onSaved();
+      },
+    });
   };
 
   // Lista de produtos sugeridos: cria os produtos com estoque zerado
@@ -199,6 +279,7 @@
           <button class="btn ghost" data-a="consumir">Consumir (FEFO)</button>
           <button class="btn ghost" data-a="mov">Outra movimentação</button>
           <a class="btn ghost" href="#/etiquetas/P:${p.id}">Etiqueta</a>
+          <button class="btn ghost" data-a="calc">Calcular consumo</button>
           <button class="btn ghost" data-a="editar">Editar</button>
         </div></div>
       <section class="panel"><div class="prod-head">
@@ -244,6 +325,7 @@
     el.querySelector('[data-a="consumir"]').onclick = () => EA.consumeForm(p, reload);
     el.querySelector('[data-a="mov"]').onclick = () => EA.movementForm({ product: p, lots: d.lots }, reload);
     el.querySelector('[data-a="editar"]').onclick = () => EA.productForm(p);
+    el.querySelector('[data-a="calc"]').onclick = () => EA.portionCalc({ product: p, onSaved: reload });
     EA.bindLotActions(el, p, d.lots, reload);
     EA.bindMovActions(el, reload);
     bindRowLinks(el);
@@ -348,6 +430,7 @@
           <label class="fld s2" data-interval><span>N dias</span><input name="r_interval" inputmode="numeric" value="${rule.interval_days || ""}"></label>
           <label class="fld s3"><span>Pessoas atendidas</span><input name="cons_people" inputmode="numeric" value="${p.cons_people || ""}" placeholder="padrão: ${esc(EA.boot.settings.people)}"></label>
           <p class="help" data-cons-preview></p>
+          <div class="fld s12" style="flex-direction:row"><button type="button" class="btn sm ghost" data-portion>Calculadora de porções (ex.: pacote de 400 g dá para 4 pessoas)</button></div>
           <details class="fld s12"><summary><b>Regras não lineares</b> (opcional): ajuste, reserva, fases e sazonalidade</summary>
             <div class="form" style="margin-top:8px">
               <label class="fld s3"><span>Fator de ajuste (×)</span><input name="r_adjust" inputmode="decimal" value="${rule.adjust ? EA.num(rule.adjust, 4) : ""}" placeholder="1"></label>
@@ -393,6 +476,15 @@
         (rule.phases || []).forEach(addPhase);
         m.querySelector("[data-addphase]").onclick = () => addPhase(null);
         f.r_monthly_on.addEventListener("change", () => { m.querySelector("[data-monthly]").hidden = !f.r_monthly_on.checked; });
+        m.querySelector("[data-portion]").onclick = () => EA.portionCalc({
+          unit: f.unit.value, name: f.name.value,
+          onApply: (res) => {
+            f.cons_mode.value = "por_pessoa"; f.cons_period.value = "dia";
+            f.cons_qty.value = EA.num(res.perPersonDay, 6);
+            ["cons_mode", "cons_period", "cons_qty"].forEach((n) => f[n].dispatchEvent(new Event("change")));
+            f.cons_qty.dispatchEvent(new Event("input"));
+          },
+        });
         const prev = () => {
           const q = parseNum(f.cons_qty.value), per = { dia: 1, semana: 7, mes: 30.4375, intervalo: parseNum(f.r_interval.value) || 0 }[f.cons_period.value];
           m.querySelector("[data-interval]").style.visibility = f.cons_period.value === "intervalo" ? "visible" : "hidden";

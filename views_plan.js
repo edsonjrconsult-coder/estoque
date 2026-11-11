@@ -47,7 +47,8 @@
     el.innerHTML = `<div class="page-head"><div><h1>Planejamento por pessoa</h1><div class="sub">Compare quanto o estoque dura e quanto comprar conforme o número de pessoas abastecidas.</div></div>
       <div class="actions"><a class="btn ghost" data-pdf target="_blank">PDF</a><a class="btn ghost" data-xlsx>Excel</a></div></div>
       <div class="filters"><label class="f">Cenários (nº de pessoas, separados por vírgula)<input data-list value="${esc(EA.boot.settings.people_scenarios || "10,15,18")}" style="width:220px"></label>
-        <button class="btn ghost" data-go>Comparar</button><button class="btn ghost" data-save>Salvar como padrão</button></div><div data-out></div>`;
+        <button class="btn ghost" data-go>Comparar</button><button class="btn ghost" data-save>Salvar como padrão</button>
+        <button class="btn" data-calc style="margin-left:auto">Calculadora de comida por pessoa</button></div><div data-out></div>`;
     const load = async () => {
       const lst = el.querySelector("[data-list]").value.replace(/\s/g, "");
       const d = await EA.get("/api/people" + EA.qs({ list: lst }));
@@ -72,6 +73,7 @@
       el.querySelector("[data-xlsx]").href = EA.url("/relatorio", { tipo: "pessoas", formato: "xlsx", people_list: lst });
     };
     el.querySelector("[data-go]").onclick = load;
+    el.querySelector("[data-calc]").onclick = () => EA.portionCalc({ onSaved: load });
     el.querySelector("[data-list]").addEventListener("change", load);
     el.querySelector("[data-save]").onclick = async () => {
       await EA.put("/api/settings", { values: { people_scenarios: el.querySelector("[data-list]").value } });

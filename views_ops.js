@@ -206,6 +206,7 @@
   V.lote = async function (el, id) {
     const d = await EA.get("/api/lots/" + id);
     const l = d.lot, p = d.product;
+    const withStock = l.containers.filter((c) => c.qty > 0), empties = l.containers.filter((c) => !(c.qty > 0));
     el.innerHTML = `<div class="page-head"><div><div class="small muted"><a href="#/produto/${p.id}">${esc(p.name)}</a> › lote</div><h1>Lote ${esc(l.code)}</h1></div>
       <div class="actions"><button class="btn" data-mov>Movimentar</button><button class="btn ghost" data-split ${l.free_qty > 0 ? "" : "disabled"}>Dividir em recipientes</button>
         <a class="btn ghost" href="#/etiquetas/${["L:" + l.id].concat(l.containers.map((c) => "R:" + c.id)).join(",")}">Etiquetas</a><button class="btn ghost" data-edit>Editar dados</button></div></div>
@@ -217,9 +218,9 @@
         <dt>Fabricação / validade</dt><dd>${EA.date(l.manufactured_at)} / ${EA.date(l.expires_at)} ${EA.expiryBadge(l.status, l.days)}</dd>
         ${l.opened_at ? `<dt>Aberto em</dt><dd>${EA.date(l.opened_at)}</dd>` : ""}<dt>Local</dt><dd>${esc(l.location_path || "—")}</dd><dt>Observações</dt><dd>${esc(l.notes || "—")}</dd></dl></section>
         <section class="panel codebox" style="flex-direction:column;align-items:flex-start"><img src="${EA.url("/codigo/qr.svg", { c: l.code })}" alt="" style="width:140px;height:140px"><span class="mono">EA-${esc(l.code)}</span></section></div>
-      <h2 style="margin:6px 0 10px">Recipientes (${l.containers.length})</h2>
-      ${l.containers.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Recipiente</th><th>Rótulo</th><th class="n">Inicial</th><th class="n">Atual</th><th>Validade</th><th>Aberto</th><th>Local</th></tr></thead><tbody>
-        ${l.containers.map((c) => `<tr class="click" data-href="#/recipiente/${c.id}"><td class="mono">${esc(c.code)}</td><td>${esc(c.label || "")}</td><td class="n">${EA.num(c.initial_qty)}</td><td class="n"><b>${EA.num(c.qty)}</b></td>
+      <h2 style="margin:6px 0 10px">Recipientes com saldo (${withStock.length})${empties.length ? ` <span class="small muted" style="font-family:var(--body);font-weight:400">· ${empties.length} vazio(s) no fim da lista</span>` : ""}</h2>
+      ${l.containers.length ? `<div class="table-wrap tall"><table class="t"><thead><tr><th>Recipiente</th><th>Rótulo</th><th class="n">Inicial</th><th class="n">Atual</th><th>Validade</th><th>Aberto</th><th>Local</th></tr></thead><tbody>
+        ${withStock.concat(empties).map((c) => `<tr class="click" data-href="#/recipiente/${c.id}"><td class="mono">${esc(c.code)}</td><td>${esc(c.label || "")}</td><td class="n">${EA.num(c.initial_qty)}</td><td class="n"><b>${EA.num(c.qty)}</b></td>
           <td>${EA.date(c.effective_expiry)} ${c.qty > 0 ? EA.expiryBadge(c.status, c.days) : '<span class="badge b-grey">vazio</span>'}</td><td>${EA.date(c.opened_at)}</td><td>${esc(c.location_path)}</td></tr>`).join("")}</tbody></table></div>` : '<div class="panel empty">Lote não dividido em recipientes.</div>'}
       <h2 style="margin:16px 0 10px">Histórico do lote</h2>${EA.movTable(d.movements, { hideProduct: true, unit: p.unit })}`;
     const reload = () => V.lote(el, id);
@@ -275,6 +276,69 @@
       onOk: async (m) => { await EA.put("/api/containers/" + c.id, EA.formData(m.querySelector("form"))); EA.toast("Recipiente atualizado."); reload(); },
     });
     EA.bindMovActions(el, reload);
+  };
+
+  // ============================================================ LANÇAR ESTOQUE (várias entradas de uma vez)
+  V.lancar = async function (el) {
+    await EA.reloadBoot();
+    const prods = (await EA.get("/api/products")).filter((p) => p.active);
+    el.innerHTML = `<div class="page-head"><div><h1>Lançar estoque</h1><div class="sub">Preencha a quantidade dos produtos que você tem e registre tudo de uma vez. Cada linha preenchida vira um lote, com validade e local.</div></div>
+        <div class="actions"><a class="btn ghost" href="#/produtos">Voltar aos produtos</a></div></div>
+      ${prods.length ? `<div class="filters">
+        <label class="f">Buscar<input data-q placeholder="nome do produto" style="min-width:220px"></label>
+        <label class="f">Categoria<select data-c>${EA.catOptions("")}</select></label>
+        <label class="f">Local para todos<select data-loc>${EA.locOptions("", "— local de cada produto —")}</select></label>
+        <label class="f" style="flex-direction:row;gap:6px;align-items:center"><input type="checkbox" data-zero> só produtos sem estoque</label></div>
+      <form data-form><div class="table-wrap"><table class="t bulk"><thead><tr><th>Produto</th><th class="n hide-sm">Em estoque</th><th>Quantidade</th><th>Validade</th><th class="hide-sm">Local</th><th class="hide-sm">Preço unit. (R$)</th></tr></thead><tbody>
+        ${prods.map((p) => `<tr data-id="${p.id}" data-cat="${p.category_id || ""}" data-qty="${p.qty}" data-name="${esc(p.name.toLowerCase())}">
+          <td><b>${esc(p.name)}</b><div class="small muted">${esc(p.category_name || "")}</div></td>
+          <td class="n hide-sm">${EA.qty(p.qty, p.unit)}</td>
+          <td class="q"><input name="qty" inputmode="decimal" placeholder="${esc(p.unit)}" aria-label="Quantidade de ${esc(p.name)} em ${esc(p.unit)}"></td>
+          <td><input type="date" name="expires_at" aria-label="Validade de ${esc(p.name)}"></td>
+          <td class="hide-sm"><select name="location_id" aria-label="Local de ${esc(p.name)}">${EA.locOptions("", "— padrão —")}</select></td>
+          <td class="hide-sm"><input name="unit_price" inputmode="decimal" aria-label="Preço unitário de ${esc(p.name)}"></td></tr>`).join("")}</tbody></table></div>
+        <div class="sticky-bar"><b data-n>Nenhuma linha preenchida</b><span class="small muted">Linhas sem quantidade são ignoradas.</span>
+          <button class="btn ok" type="submit" style="margin-left:auto" disabled>Registrar entradas</button></div></form>`
+      : `<div class="panel empty"><p>Cadastre os produtos primeiro.</p><p><a class="btn" href="#/produtos">Ir para Produtos</a></p></div>`}`;
+    const form = el.querySelector("[data-form]");
+    if (!form) return;
+    const rows = Array.from(form.querySelectorAll("tbody tr"));
+    const filled = () => rows.filter((r) => EA.parseNum(r.querySelector("[name=qty]").value) > 0);
+    const upd = () => {
+      rows.forEach((r) => r.classList.toggle("filled", EA.parseNum(r.querySelector("[name=qty]").value) > 0));
+      const n = filled().length;
+      form.querySelector("[data-n]").textContent = n ? n + " produto(s) a lançar" : "Nenhuma linha preenchida";
+      form.querySelector("button[type=submit]").disabled = !n;
+    };
+    const filt = () => {
+      const q = el.querySelector("[data-q]").value.trim().toLowerCase(), c = el.querySelector("[data-c]").value, z = el.querySelector("[data-zero]").checked;
+      rows.forEach((r) => { r.hidden = !!((q && !r.dataset.name.includes(q)) || (c && r.dataset.cat !== c) || (z && Number(r.dataset.qty) > 0)); });
+    };
+    form.addEventListener("input", upd);
+    ["[data-q]", "[data-c]", "[data-zero]"].forEach((s) => el.querySelector(s).addEventListener("input", filt));
+    form.addEventListener("keydown", (e) => {
+      // Enter desce para a mesma coluna da próxima linha visível (digitação rápida)
+      if (e.key !== "Enter" || e.target.tagName !== "INPUT") return;
+      e.preventDefault();
+      const tr = e.target.closest("tr");
+      let nx = tr.nextElementSibling;
+      while (nx && nx.hidden) nx = nx.nextElementSibling;
+      if (nx) nx.querySelector(`[name=${e.target.name}]`).focus();
+    });
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const all = el.querySelector("[data-loc]").value;
+      const items = filled().map((r) => ({ product_id: r.dataset.id, qty: r.querySelector("[name=qty]").value, expires_at: r.querySelector("[name=expires_at]").value,
+        location_id: r.querySelector("[name=location_id]").value || all, unit_price: r.querySelector("[name=unit_price]").value }));
+      const btn = form.querySelector("button[type=submit]");
+      btn.disabled = true;
+      try {
+        const res = await EA.post("/api/bulk-entry", { items });
+        EA.toast(res.created + " entrada(s) registrada(s).");
+        if (await EA.confirm("Imprimir etiquetas?", "Deseja imprimir as etiquetas dos " + res.created + " lote(s) lançados?", "Ir para etiquetas")) return EA.go("#/etiquetas/" + res.lot_ids.map((i) => "L:" + i).join(","));
+        EA.go("#/produtos");
+      } catch (err) { EA.toast(err.message, true); btn.disabled = false; }
+    });
   };
 
   // ============================================================ MOVIMENTAÇÕES

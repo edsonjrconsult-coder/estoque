@@ -179,7 +179,16 @@
     m.close = close;
     m.error = (msg) => { const e = m.querySelector(".err"); e.textContent = msg; e.classList.toggle("show", !!msg); if (msg) e.scrollIntoView({ block: "nearest" }); };
     bg.querySelectorAll("[data-x]").forEach((b) => b.addEventListener("click", close));
-    bg.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    bg.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") return close();
+      if (e.key !== "Tab") return;
+      // mantém o foco do teclado dentro da janela
+      const els = Array.from(m.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((x) => !x.disabled && x.offsetParent !== null);
+      if (!els.length) return;
+      const first = els[0], last = els[els.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
     const ok = bg.querySelector("[data-ok]");
     if (ok && opts.onOk) {
       const run = async () => {
@@ -225,18 +234,44 @@
   };
 
   // ------------------------------------------------------------ menu e rotas
+  // Ícones próprios (traço), desenhados em SVG: iguais em qualquer aparelho, sem depender de fontes
+  const I = (d) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  EA.icons = {
+    dashboard: I('<rect x="3" y="3" width="8" height="10" rx="1"/><rect x="13" y="3" width="8" height="6" rx="1"/><rect x="13" y="11" width="8" height="10" rx="1"/><rect x="3" y="15" width="8" height="6" rx="1"/>'),
+    produtos: I('<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>'),
+    lancar: I('<path d="M4 6h10M4 12h10M4 18h6"/><path d="M18 9v8M14 13h8"/>'),
+    categorias: I('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+    locais: I('<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'),
+    lotes: I('<rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="8" height="6" rx="1"/><rect x="13" y="14" width="8" height="6" rx="1"/>'),
+    movimentacoes: I('<path d="M4 8h14l-3-3M20 16H6l3 3"/>'),
+    consumo: I('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+    pessoas: I('<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.3"/><path d="M16 14.2c2.8.3 5 2.6 5 5.8"/>'),
+    validade: I('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/>'),
+    etiquetas: I('<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v7M14 20h3"/>'),
+    compras: I('<path d="M3 4h2l2.5 11h10.5l2-8H6.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/>'),
+    revisao: I('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M8.5 12l2.5 2.5 4.5-5"/>'),
+    relatorios: I('<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 17v-3M12 17v-5M15 17v-2"/>'),
+    emergencia: I('<path d="M12 3 2 20h20z"/><path d="M12 10v4.5M12 17.5v.1"/>'),
+    backup: I('<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>'),
+    configuracoes: I('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>'),
+    ajuda: I('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17v.1"/>'),
+    camera: I('<path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'),
+    plus: I('<path d="M12 5v14M5 12h14"/>'),
+    minus: I('<path d="M5 12h14"/>'),
+    user: I('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>'),
+  };
   const MENU = [
-    ["dashboard", "▦", "Dashboard"], ["produtos", "▤", "Produtos"], ["categorias", "◫", "Categorias"],
-    ["locais", "⌂", "Locais e mapa"], ["lotes", "▣", "Lotes e recipientes"], ["movimentacoes", "⇄", "Movimentações"],
-    ["consumo", "◑", "Consumo e autonomia"], ["pessoas", "☷", "Planejamento por pessoa"], ["validade", "◷", "Validade"],
-    ["etiquetas", "▥", "QR Codes e etiquetas"], ["compras", "🛒", "Compras e reposição"], ["revisao", "✓", "Revisão periódica"],
-    ["relatorios", "▧", "Relatórios"], "sep", ["emergencia", "⚠", "Modo de emergência", "emerg"], "sep",
-    ["backup", "⛁", "Backup"], ["configuracoes", "⚙", "Configurações"],
+    ["dashboard", "Painel"], ["produtos", "Produtos"], ["lancar", "Lançar estoque"], ["categorias", "Categorias"],
+    ["locais", "Locais e mapa"], ["lotes", "Lotes e recipientes"], ["movimentacoes", "Movimentações"],
+    ["consumo", "Consumo e autonomia"], ["pessoas", "Planejamento por pessoa"], ["validade", "Validade"],
+    ["etiquetas", "QR Codes e etiquetas"], ["compras", "Compras e reposição"], ["revisao", "Revisão periódica"],
+    ["relatorios", "Relatórios"], "sep", ["emergencia", "Modo de emergência", "emerg"], "sep",
+    ["backup", "Backup"], ["configuracoes", "Configurações"], ["ajuda", "Ajuda"],
   ];
   function renderMenu(active) {
     document.getElementById("menu").innerHTML = MENU.map((m) => {
       if (m === "sep") return '<div class="sep"></div>';
-      return `<a href="#/${m[0]}" class="${m[0] === active ? "on" : ""} ${m[3] || ""}" data-r="${m[0]}"><span class="ic" aria-hidden="true">${m[1]}</span>${m[2]}</a>`;
+      return `<a href="#/${m[0]}" class="${m[0] === active ? "on" : ""} ${m[2] || ""}" data-r="${m[0]}" ${m[0] === active ? 'aria-current="page"' : ""}><span class="ic">${EA.icons[m[0]] || ""}</span>${m[1]}</a>`;
     }).join("");
   }
 
@@ -500,16 +535,22 @@
     EA.showLogin();
   };
 
+  // Menu do usuário (canto superior direito): nome, perfil, trocar senha e sair
   function renderUserChip() {
     let c = document.getElementById("user-chip");
     if (!c) {
       c = document.createElement("div");
       c.id = "user-chip";
       document.getElementById("top").appendChild(c);
+      document.addEventListener("click", (e) => { if (!e.target.closest("#user-chip")) c.classList.remove("open"); });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") c.classList.remove("open"); });
     }
-    c.innerHTML = `<span title="${esc(EA.user.role_label)}">${esc(EA.user.name)}</span><button class="btn ghost sm" data-pw>Senha</button><button class="btn ghost sm" data-out>Sair</button>`;
+    c.innerHTML = `<button class="user-btn" aria-haspopup="true" aria-label="Menu do usuário ${esc(EA.user.name)}" data-menu>${EA.icons.user}<span>${esc(EA.user.name)}</span></button>
+      <div class="user-pop" role="menu"><div class="who"><b>${esc(EA.user.name)}</b><small>${esc(EA.user.username)} · ${esc(EA.user.role_label)}</small></div>
+        <button role="menuitem" data-pw>Trocar minha senha</button><button role="menuitem" data-out>Sair</button></div>`;
+    c.querySelector("[data-menu]").onclick = () => c.classList.toggle("open");
     c.querySelector("[data-out]").onclick = EA.logout;
-    c.querySelector("[data-pw]").onclick = () => EA.modal({
+    c.querySelector("[data-pw]").onclick = () => { c.classList.remove("open"); EA.modal({
       title: "Trocar minha senha", size: "narrow", okLabel: "Trocar senha",
       body: `<form class="form"><label class="fld s12"><span>Senha atual</span><input type="password" name="old" autocomplete="current-password"></label>
         <label class="fld s6"><span>Nova senha</span><input type="password" name="new" autocomplete="new-password"></label><label class="fld s6"><span>Repita</span><input type="password" name="new2" autocomplete="new-password"></label></form>`,
@@ -519,7 +560,7 @@
         await EA.post("/api/auth/password", d);
         EA.toast("Senha alterada.");
       },
-    });
+    }); };
   }
 
   let started = false;

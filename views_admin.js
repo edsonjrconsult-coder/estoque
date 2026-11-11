@@ -224,6 +224,36 @@
     });
   }
 
+  // ============================================================ AJUDA
+  V.ajuda = async function (el) {
+    const ipad = document.body.classList.contains("ipad");
+    el.innerHTML = `<div class="page-head"><div><h1>Ajuda</h1><div class="sub">Guia rápido de uso. Tudo funciona sem internet.</div></div></div>
+      <section class="panel help">
+        <h2 style="margin-top:0">Rotina do dia a dia</h2>
+        <ol><li><b>Chegou compra:</b> em Produtos, toque no <b>+</b> do produto (ou use <a href="#/lancar">Lançar estoque</a> para vários de uma vez). Cada entrada vira um lote com validade e local.</li>
+          <li><b>Usou algo:</b> toque no <b>−</b> do produto. O sistema baixa primeiro o que vence primeiro (FEFO).</li>
+          <li><b>Com etiqueta:</b> leia o QR Code (leitor${ipad ? " Bluetooth" : " USB"} ou botão Câmera) e a ficha abre na hora.</li>
+          <li><b>Uma vez por mês:</b> faça a <a href="#/revisao">Revisão periódica</a> e um <a href="#/backup">backup</a> para fora do aparelho.</li></ol>
+        <h2>Como ler a autonomia</h2>
+        <p>Autonomia é por quantos dias o estoque dura com o consumo cadastrado. O cálculo usa primeiro o que vence primeiro e desconta o que vai vencer antes de ser usado, e o número é sempre arredondado para baixo.
+          A autonomia de uma categoria é a do item que acaba primeiro. A autonomia geral considera só os itens marcados como <b>críticos</b>.</p>
+        <p>Para acertar o consumo, use <b>Calcular consumo</b> na ficha do produto. Exemplo: um pacote de 400 g que dá para 4 pessoas, 1 vez por dia, equivale a 100 g por pessoa por dia.</p>
+        <h2>Lotes, recipientes e etiquetas</h2>
+        <p>Um lote pode ser dividido em recipientes (ex.: 100 L em 5 galões de 20 L). Cada recipiente tem código, QR Code, local e histórico próprios, e continua ligado ao lote. Etiqueta perdida? Imprima de novo: o código é sempre o mesmo.</p>
+        <h2>Corrigir um lançamento errado</h2>
+        <p>Nenhuma movimentação é apagada. Abra o histórico do produto e use <b>Estornar</b>: o sistema lança a operação inversa e mantém as duas no registro. Diferença na contagem física? Use <b>Ajuste de inventário</b>.</p>
+        <h2>Modo de emergência</h2>
+        <p>Mostra a autonomia por categoria, o que usar primeiro, o que precisa ser economizado e permite simular redução de consumo. Imprima o <b>inventário de emergência</b> a cada revisão e guarde em papel.</p>
+        <h2>Usuários e senha</h2>
+        <p><b>Administrador</b> faz tudo; <b>Operador</b> cadastra e registra movimentações; <b>Consulta</b> só visualiza. Esqueceu a senha do administrador? Na tela de entrada, use <b>Esqueci a senha</b> com o código de recuperação anotado na criação.</p>
+        <h2>Backup</h2>
+        <p>${ipad ? "No iPad os dados ficam dentro do app. <b>Se o ícone for removido da Tela de Início, os dados são apagados.</b> Em Backup › Exportar banco completo, escolha Salvar em Arquivos (iCloud, pendrive USB-C ou No meu iPad)."
+          : "Há backup automático ao abrir, a cada 6 horas com alterações e ao encerrar. Em Backup › Fazer backup você também copia para um pendrive. Copiar a pasta <span class=\"mono\">dados</span> inteira com o sistema fechado também é um backup válido."}
+          O mesmo arquivo .db serve no Windows e no iPad: exporte em um e restaure no outro.</p>
+        <p class="small muted">Estoque Autônomo ${esc(EA.boot.version)}</p>
+      </section>`;
+  };
+
   // ============================================================ CONFIGURAÇÕES
   V.configuracoes = async function (el) {
     await EA.reloadBoot();

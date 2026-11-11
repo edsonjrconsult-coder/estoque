@@ -58,7 +58,7 @@
       out.innerHTML = `
         <div class="grid" style="grid-template-columns:repeat(${ps.length},minmax(0,1fr));margin-bottom:16px">${d.summary.map((s) => `<section class="panel">
           <h2>${s.people} pessoas</h2><p class="muted small">Autonomia geral: <b style="font-size:16px;color:var(--ink)">${s.overall.days === null ? "—" : EA.days(s.overall.days, s.overall.capped)}</b>${s.overall.limiting ? " (limitada por " + esc(s.overall.limiting) + ")" : ""}</p>
-          <table class="t">${s.groups.filter((g) => g.with_consumption).map((g) => `<tr><td>${esc(g.label)}</td><td class="n"><b>${EA.days(g.min_days)}</b></td></tr>`).join("")}</table></section>`).join("")}</div>
+          <div class="table-wrap"><table class="t">${s.groups.filter((g) => g.with_consumption).map((g) => `<tr><td>${esc(g.label)}</td><td class="n"><b>${EA.days(g.min_days)}</b></td></tr>`).join("")}</table></div></section>`).join("")}</div>
         ${d.per_category.length ? `<section class="panel"><h2>Consumo estimado por pessoa e por categoria</h2><div class="table-wrap"><table class="t"><thead><tr><th>Categoria</th><th class="n">Por pessoa/dia</th>${ps.map((n) => `<th class="n">${n} pessoas/dia</th><th class="n">${n} pessoas/mês</th>`).join("")}</tr></thead><tbody>
           ${d.per_category.map((c) => `<tr><td>${esc(c.category)}</td><td class="n">${EA.qty(c.per_person_day, c.unit)}</td>${ps.map((n) => `<td class="n">${EA.qty(c.by_people[n], c.unit)}</td><td class="n">${EA.qty(c.by_people[n] * 30.4375, c.unit)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
           <p class="small muted">Somado por unidade de medida (só produtos com consumo “por pessoa”).</p></section>` : ""}

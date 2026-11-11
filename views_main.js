@@ -24,7 +24,7 @@
         <div class="sub">${d.people} pessoa(s) atendida(s) · meta de autonomia ${target} dias</div></div>
         <div class="actions"><a class="btn ghost" href="#/movimentacoes">Registrar movimentação</a><a class="btn" href="#/produtos/novo">Cadastrar produto</a></div></div>
       ${d.review_due ? `<div class="alert warn"><span>Revisão periódica de validades e quantidades ${d.last_review ? "vencida (última em " + EA.date(d.last_review.ts) + ")" : "ainda não realizada"} — a recomendação é revisar a cada ${d.review_interval} dias.</span><div class="actions"><a class="btn sm" href="#/revisao">Fazer revisão</a></div></div>` : ""}
-      ${d.total_products === 0 ? `<div class="alert good"><span><b>Comece por aqui:</b> adicione os produtos da lista de sugestões (água, alimentos, higiene, remédios…) e depois lance as quantidades que você tem.</span><div class="actions"><button class="btn sm" data-cat>Abrir lista de sugestões</button></div></div>` : ""}
+      ${onboarding(d)}
       ${!d.last_backup ? `<div class="alert warn"><span>Nenhum backup registrado ainda.</span><div class="actions"><a class="btn sm" href="#/backup">Fazer backup</a></div></div>` : ""}
       <div class="autonomy-hero">
         <div class="big"><div class="small">Autonomia geral estimada</div>
@@ -61,6 +61,19 @@
     const cb = el.querySelector("[data-cat]");
     if (cb) cb.onclick = () => EA.catalogModal(() => EA.go("#/produtos"));
   };
+  // Primeiros passos: aparece até o sistema estar em uso de verdade
+  function onboarding(d) {
+    const steps = [
+      [d.total_products > 0, "Cadastrar os produtos", "A lista de produtos comuns cadastra cerca de 60 itens de uma vez.", '<button class="btn sm" data-cat>Adicionar lista</button>'],
+      [d.stocked_products > 0, "Lançar o que você tem em estoque", "Informe quantidade, validade e local de vários produtos numa tela só.", '<a class="btn sm" href="#/lancar">Lançar estoque</a>'],
+      [d.with_consumption > 0, "Conferir o consumo da casa", "Ajuste o consumo sugerido com a calculadora de porções; é ele que define a autonomia.", '<a class="btn sm" href="#/consumo">Ver consumo</a>'],
+      [d.manual_backup, "Fazer o primeiro backup", "Guarde uma cópia fora do aparelho (pendrive ou Arquivos).", '<a class="btn sm" href="#/backup">Backup</a>'],
+    ];
+    if (steps.every((s) => s[0])) return "";
+    const n = steps.filter((s) => s[0]).length;
+    return `<section class="panel" style="border-left:5px solid var(--signal)"><div class="panel-head"><h2>Primeiros passos</h2><span class="small muted">${n} de ${steps.length} concluídos</span></div>
+      <ol class="steps">${steps.map((s, i) => `<li class="${s[0] ? "done" : ""}"><span class="dot">${s[0] ? "✓" : i + 1}</span><span class="t"><b>${s[1]}</b><br><span class="small muted">${s[2]}</span></span>${s[0] ? "" : s[3]}</li>`).join("")}</ol></section>`;
+  }
   function listExpiry(rows) {
     if (!rows.length) return '<div class="empty">Nenhum item vencido ou vencendo em 30 dias.</div>';
     return `<table class="t">${rows.map((r) => `<tr class="click" data-href="#/produto/${r.product_id}"><td>${esc(r.product_name)} <span class="muted small">${esc(r.code)}</span></td><td class="n">${EA.qty(r.qty, r.unit)}</td><td>${EA.expiryBadge(r.status, r.days)}</td></tr>`).join("")}</table>`;
@@ -83,7 +96,7 @@
     }
     el.innerHTML = `
       <div class="page-head"><div><h1>Produtos</h1><div class="sub">Clique em um produto para ver a ficha completa, lotes, recipientes e histórico.</div></div>
-        <div class="actions"><button class="btn ghost" data-cat>Lista de sugestões</button><button class="btn ghost" data-imp>Importar planilha (CSV)</button><a class="btn" href="#/produtos/novo">Cadastrar produto</a></div></div>
+        <div class="actions"><a class="btn ghost" href="#/lancar">Lançar estoque</a><button class="btn ghost" data-cat>Lista de sugestões</button><button class="btn ghost" data-imp>Importar planilha (CSV)</button><a class="btn" href="#/produtos/novo">Cadastrar produto</a></div></div>
       <div class="filters">
         <label class="f">Buscar<input data-f="q" value="${esc(initQ)}" placeholder="nome, código, marca, código de barras" style="min-width:260px"></label>
         <label class="f">Categoria<select data-f="category_id">${EA.catOptions("", { withSubs: true })}</select></label>
@@ -111,16 +124,24 @@
         if (b3) b3.onclick = async () => { b3.disabled = true; await EA.addWholeCatalog(); await EA.reloadBoot(); load(); };
         return;
       }
-      box.innerHTML = `<table class="t"><thead><tr><th>Produto</th><th>Categoria</th><th class="n">Quantidade</th><th class="n">Mínimo</th><th>Situação</th><th>Próx. validade</th><th class="n">Autonomia</th><th>Local</th></tr></thead><tbody>
+      box.innerHTML = `<table class="t"><thead><tr><th>Produto</th><th class="hide-sm">Categoria</th><th class="n">Quantidade</th><th class="n hide-sm">Mínimo</th><th>Situação</th><th class="hide-sm">Próx. validade</th><th class="n">Autonomia</th><th class="hide-sm">Local</th><th></th></tr></thead><tbody>
         ${rows.map((p) => `<tr class="click st-${p.status}" data-href="#/produto/${p.id}">
           <td><b>${esc(p.name)}</b>${p.active ? "" : ' <span class="badge b-grey">inativo</span>'}<div class="small muted">${esc(p.code)}${p.brand ? " · " + esc(p.brand) : ""}</div></td>
-          <td>${esc(p.category_name || "")}<div class="small muted">${esc(p.subcategory_name || "")}</div></td>
-          <td class="n">${EA.qty(p.qty, p.unit)}</td><td class="n">${EA.num(p.min_qty)}</td>
+          <td class="hide-sm">${esc(p.category_name || "")}<div class="small muted">${esc(p.subcategory_name || "")}</div></td>
+          <td class="n">${EA.qty(p.qty, p.unit)}</td><td class="n hide-sm">${EA.num(p.min_qty)}</td>
           <td>${EA.statusBadge(p.status)} ${EA.flagBadges(p.flags.filter((f) => f !== p.status && !(p.status === "baixo" && (f === "baixo" || f === "zerado"))))}</td>
-          <td>${p.next_expiry ? EA.date(p.next_expiry) : '<span class="muted">—</span>'}</td>
+          <td class="hide-sm">${p.next_expiry ? EA.date(p.next_expiry) : '<span class="muted">—</span>'}</td>
           <td class="n">${p.daily_rate > 0 ? EA.days(p.autonomy_days, p.autonomy_capped) : '<span class="muted">—</span>'}</td>
-          <td class="small">${esc(p.locations.join("; "))}</td></tr>`).join("")}</tbody></table>`;
+          <td class="small hide-sm">${esc(p.locations.join("; "))}</td>
+          <td>${p.active && EA.user.role !== "consulta" ? `<div class="row-actions"><button class="btn sm ghost" data-qin="${p.id}" title="Entrada (novo lote)" aria-label="Entrada de ${esc(p.name)}">${EA.icons.plus}</button><button class="btn sm ghost" data-qout="${p.id}" title="Consumir (FEFO)" aria-label="Consumir ${esc(p.name)}" ${p.usable_qty > 0 ? "" : "disabled"}>${EA.icons.minus}</button></div>` : ""}</td></tr>`).join("")}</tbody></table>`;
       bindRowLinks(box);
+      const quick = (sel, fn) => box.querySelectorAll(sel).forEach((b) => b.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const d = await EA.get("/api/products/" + (b.dataset.qin || b.dataset.qout));
+        fn(d.product, load);
+      }));
+      quick("[data-qin]", EA.entryForm);
+      quick("[data-qout]", EA.consumeForm);
     };
     let tmr;
     el.querySelectorAll("[data-f]").forEach((i) => i.addEventListener(i.tagName === "INPUT" && i.type !== "checkbox" ? "input" : "change", () => { clearTimeout(tmr); tmr = setTimeout(load, 200); }));

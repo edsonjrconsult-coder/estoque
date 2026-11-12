@@ -524,7 +524,7 @@
     try {
       const items = await EA.get("/api/catalog");
       const r = await EA.post("/api/catalog", { keys: items.filter((i) => !i.exists).map((i) => i.key) });
-      EA.toast(r.created + " produtos da lista cadastrados com estoque zerado. Lance as quantidades em Entrada.");
+      EA.toast(r.created + " produtos da lista cadastrados com estoque zerado. Lance as quantidades em Lançar estoque.");
       return r;
     } catch (e) { EA.toast(e.message, true); return null; }
   };

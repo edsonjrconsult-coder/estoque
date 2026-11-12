@@ -105,6 +105,7 @@
           <option value="adequado">Adequado</option><option value="baixo">Estoque baixo / zerado</option><option value="vencendo">Vencendo</option><option value="vencido">Com itens vencidos</option></select></label>
         <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-f="include_inactive"> mostrar inativos</label>
       </div>
+      <div data-missing></div>
       <div class="table-wrap tall" data-list><div class="empty">Carregando…</div></div>`;
     if (initStatus) el.querySelector('[data-f="status"]').value = initStatus;
     const load = async () => {
@@ -112,6 +113,14 @@
       el.querySelectorAll("[data-f]").forEach((i) => { f[i.dataset.f] = i.type === "checkbox" ? (i.checked ? "1" : "") : i.value; });
       const rows = await EA.get("/api/products" + EA.qs(f));
       const box = el.querySelector("[data-list]");
+      const miss = el.querySelector("[data-missing]");
+      if (!Object.values(f).some((v) => v) && rows.length) {
+        const cat = await EA.get("/api/catalog").catch(() => []);
+        const n = cat.filter((c) => !c.exists).length;
+        miss.innerHTML = n ? `<div class="alert warn" style="justify-content:space-between;flex-wrap:wrap"><span>Faltam <b>${n} produtos</b> da lista padrão (arroz, feijão, flocão, água, remédios, higiene, limpeza…). Eles entram com estoque zerado e você só lança as quantidades em <b>Lançar estoque</b>.</span><button class="btn sm" data-addmiss>Adicionar os ${n} que faltam</button></div>` : "";
+        const bm = miss.querySelector("[data-addmiss]");
+        if (bm) bm.onclick = async () => { bm.disabled = true; await EA.addWholeCatalog(); await EA.reloadBoot(); load(); };
+      } else miss.innerHTML = "";
       if (!rows.length) {
         box.innerHTML = Object.values(f).some((v) => v) ? '<div class="empty">Nenhum produto encontrado com esses filtros.</div>'
           : `<div class="panel" style="margin:12px;border-left:5px solid var(--signal)"><h2>Nenhum produto cadastrado ainda</h2>
@@ -200,11 +209,17 @@
           const perMeal = pkg / serves, perDay = perMeal * times, house = perDay * ppl;
           m._res = { perPersonDay: perDay };
           const n = (h) => (pkg > 0 ? Math.ceil((house * h) / pkg) : 0);
+          // g -> kg e mL -> L quando passa de mil, para não mostrar "54.788 g"
+          const nice = (v) => (u === "g" && v >= 1000 ? EA.num(v / 1000, 2) + " kg" : u === "mL" && v >= 1000 ? EA.num(v / 1000, 2) + " L" : EA.qty(v, u));
+          const isMV = u in MASS || u in VOL;
+          const warn = !isMV && EA.parseNum(f.pkg.value) > 20 ? `Este produto é contado em <b>${esc(u)}</b>, não em gramas. Digite quantas ${esc(u)} vêm em uma embalagem (ex.: 1), ou escolha na ficha do produto uma unidade em kg/g.`
+            : perDay > (isMV ? 1.5 : 20) ? `Atenção: ${nice(perDay)} por pessoa por dia parece muito. Confira se a unidade da embalagem (<b>${esc(f.pkgu.value)}</b>) está certa — 400 <b>g</b>, e não 400 kg.` : "";
           m.querySelector("[data-out]").innerHTML = pkg > 0 && times > 0 ? `
+            ${warn ? `<div class="alert warn" style="margin-bottom:8px">${warn}</div>` : ""}
             <dl class="kv"><dt>Por pessoa, por refeição</dt><dd><b>${EA.qty(perMeal, u)}</b></dd>
             <dt>Por pessoa, por dia</dt><dd><b>${EA.qty(perDay, u)}</b></dd>
-            <dt>Para ${ppl} pessoas</dt><dd><b>${EA.qty(house, u)}</b> por dia · ${EA.qty(house * 7, u)} por semana · ${EA.qty(house * 30.4375, u)} por mês</dd>
-            <dt>Embalagens necessárias</dt><dd>${[30, 90, 180].map((h) => `${h} dias: <b>${n(h)}</b>`).join(" · ")} <span class="muted">(de ${EA.num(EA.parseNum(f.pkg.value))} ${esc(f.pkgu.value)})</span></dd></dl>`
+            <dt>Para ${ppl} pessoas</dt><dd><b>${nice(house)}</b> por dia · ${nice(house * 7)} por semana · ${nice(house * 30.4375)} por mês</dd>
+            <dt>Embalagens necessárias</dt><dd>${[30, 90, 180].map((h) => `${h} dias: <b>${n(h)}</b> (${nice(house * h)})`).join("<br>")} <span class="muted">(de ${EA.num(EA.parseNum(f.pkg.value))} ${esc(f.pkgu.value)})</span></dd></dl>`
             : '<span class="muted">Preencha o tamanho da embalagem e quantas vezes é servido.</span>';
         };
         if (f.pid) f.pid.addEventListener("change", () => { fillUnits(); calc(); });
@@ -232,7 +247,7 @@
     items.forEach((i) => (groups[i.category] = groups[i.category] || []).push(i));
     EA.modal({
       title: "Lista de produtos sugeridos", size: "wide", okLabel: "Adicionar selecionados",
-      body: `<p>Marque o que você guarda em casa. Os produtos entram <b>com estoque zerado</b>; depois, em cada um, use <b>Entrada</b> para lançar a quantidade, a validade e o local.
+      body: `<p>Marque o que você guarda em casa. Os produtos entram <b>com estoque zerado</b>; depois use <b>Lançar estoque</b> (menu lateral) para digitar só as quantidades e validades.
         O consumo sugerido é uma média por adulto: ajuste na ficha do produto conforme a realidade da casa.</p>
         <div style="display:flex;gap:8px;margin:8px 0 12px"><button type="button" class="btn sm ghost" data-all>Marcar todos</button><button type="button" class="btn sm ghost" data-none>Desmarcar todos</button><span class="small muted" data-n style="align-self:center"></span></div>
         <div style="columns:2 360px;column-gap:22px">${Object.entries(groups).map(([g, list]) => `<div style="break-inside:avoid;margin-bottom:14px">
